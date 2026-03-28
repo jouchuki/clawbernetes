@@ -1,9 +1,33 @@
 apiVersion: claw.clawbernetes.io/v1
 kind: ClawGateway
 metadata:
-  labels:
-    app.kubernetes.io/name: hackaway-repo
-    app.kubernetes.io/managed-by: kustomize
-  name: clawgateway-sample
+  name: main-gateway
+  namespace: clawbernetes
 spec:
-  # TODO(user): Add fields here
+  topology: centralized
+  port: 8443
+  routing:
+    enabled: true
+    logEveryDecision: true
+    evaluators:
+      # Regex-based prompt injection blocker (~0ms, no LLM call)
+      - name: exec-injection-blocker
+        type: regex
+        priority: 100
+        action: block
+        blockReply: "Blocked: command injection or prompt manipulation detected."
+        emitEvent: true
+
+      # Cost-based complexity routing — cheap model for simple, expensive for complex
+      - name: complexity-router
+        type: classifier
+        priority: 50
+        classifierModel: query-complexity
+        routes:
+          simple:
+            provider: anthropic
+            model: claude-haiku-4-5
+          complex:
+            provider: anthropic
+            model: claude-sonnet-4-6
+        timeoutMs: 3000
