@@ -243,6 +243,14 @@ func (r *ClawAgentReconciler) agentDeployment(agent *clawv1.ClawAgent, ns, name,
 		Image:           openclawImage,
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Env:             env,
+		EnvFrom: []corev1.EnvFromSource{
+			{
+				SecretRef: &corev1.SecretEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "openclaw-api-keys"},
+					Optional:             boolPtr(true),
+				},
+			},
+		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "openclaw-home", MountPath: "/home/node/.openclaw"},
 		},

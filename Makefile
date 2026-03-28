@@ -163,6 +163,18 @@ build-openclaw-image: ## Clone the orq.ai OpenClaw fork and build the container 
 load-kind: ## Load the OpenClaw image into the local kind cluster.
 	$(KIND) load docker-image $(OPENCLAW_IMG) --name $(KIND_CLUSTER_NAME)
 
+.PHONY: create-secrets
+create-secrets: ## Create K8s secrets from .env file.
+	@if [ ! -f .env ]; then \
+		echo "ERROR: .env file not found. Copy .env.example to .env and fill in your keys."; \
+		exit 1; \
+	fi
+	@$(KUBECTL) create secret generic openclaw-api-keys \
+		--from-env-file=.env \
+		--namespace=clawbernetes \
+		--dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@echo "=== Secret openclaw-api-keys created/updated ==="
+
 .PHONY: kind-setup
 kind-setup: ## Create a kind cluster and install CRDs.
 	@$(KIND) get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER_NAME)$$" || $(KIND) create cluster --name $(KIND_CLUSTER_NAME)
@@ -181,7 +193,7 @@ demo: kind-setup ## Full local demo: create kind cluster, install CRDs, print ne
 	@echo ""
 
 .PHONY: demo-up
-demo-up: build build-openclaw-image kind-setup load-kind ## One command: build everything, load images, apply all CRs, run operator.
+demo-up: build build-openclaw-image kind-setup load-kind create-secrets ## One command: build everything, load images, apply all CRs, run operator.
 	@# Clean up any previous operator
 	@fuser -k 8081/tcp 2>/dev/null || true
 	@fuser -k 8080/tcp 2>/dev/null || true
