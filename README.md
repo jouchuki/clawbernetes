@@ -1,6 +1,6 @@
 # Clawbernetes
 
-**Kubernetes-native orchestration for autonomous AI agent fleets.**
+**Kubernetes-native orchestration for autonomous AI agent fleets. For founders who want to go off-cloud.**
 
 Clawbernetes turns AI agent deployment into a `kubectl apply` workflow. Declare your agents, policies, and observability stack as Custom Resources -- the operator handles the rest.
 
@@ -27,7 +27,7 @@ spec:
 `kubectl apply` and the operator:
 1. Creates a Pod running [OpenClaw](https://github.com/orq-ai/openclaw) with identity files (SOUL.md, USER.md, IDENTITY.md)
 2. Installs the [observeclaw](https://github.com/ai-trust-layer/observeclaw) plugin for budget enforcement, tool policy, anomaly detection, and routing
-3. Routes all LLM traffic through a centralized ClawGateway proxy (PII redaction, optional complexity classification)
+3. Routes all LLM traffic through a centralized ClawGateway proxy for LLM routing (for example, per budget constraints or to local LLMs)
 4. Exports traces, metrics, and logs to Tempo via OpenTelemetry
 5. Visualizes everything in a pre-provisioned Grafana dashboard
 
