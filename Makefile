@@ -154,7 +154,8 @@ KIND_CLUSTER_NAME ?= clawbernetes
 .PHONY: build-openclaw-image
 build-openclaw-image: ## Clone the orq.ai OpenClaw fork and build the container image.
 	$(eval TMPDIR := $(shell mktemp -d))
-	git clone --recurse-submodules https://github.com/orq-ai/openclaw.git $(TMPDIR)/openclaw
+	git clone https://github.com/orq-ai/openclaw.git $(TMPDIR)/openclaw
+	-cd $(TMPDIR)/openclaw && git submodule update --init --recursive 2>/dev/null || true
 	$(CONTAINER_TOOL) build -t $(OPENCLAW_IMG) $(TMPDIR)/openclaw
 	rm -rf $(TMPDIR)
 
@@ -173,23 +174,55 @@ kind-teardown: ## Delete the kind cluster.
 	$(KIND) delete cluster --name $(KIND_CLUSTER_NAME)
 
 .PHONY: demo
-demo: kind-setup ## Full local demo: create kind cluster, install CRDs, run operator, apply sample CR.
+demo: kind-setup ## Full local demo: create kind cluster, install CRDs, print next steps.
 	@echo ""
 	@echo "=== Cluster ready. CRDs installed. ==="
+	@echo "Next: make demo-up"
 	@echo ""
-	@echo "In this terminal, run the operator:"
-	@echo "  make run"
+
+.PHONY: demo-up
+demo-up: build build-openclaw-image kind-setup load-kind ## One command: build everything, load images, apply all CRs, run operator.
+	@# Clean up any previous operator
+	@fuser -k 8081/tcp 2>/dev/null || true
+	@fuser -k 8080/tcp 2>/dev/null || true
+	@sleep 1
+	@# Delete existing CRs so resources get recreated cleanly
+	@$(KUBECTL) delete clawagents --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawobservabilities --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawskillsets --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawpolicies --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawgateways --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawconnectors --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@sleep 3
+	@# Start operator in background
+	go run ./cmd/main.go > /tmp/clawbernetes-operator.log 2>&1 &
+	@sleep 4
+	@echo "=== Operator running (logs: /tmp/clawbernetes-operator.log) ==="
+	@# Apply all sample CRs in dependency order
+	$(KUBECTL) apply -f config/samples/claw_v1_clawobservability.yaml
+	$(KUBECTL) apply -f config/samples/claw_v1_clawskillset.yaml
+	$(KUBECTL) apply -f config/samples/claw_v1_clawagent.yaml
 	@echo ""
-	@echo "In a second terminal, apply the sample CR:"
-	@echo "  kubectl apply -f config/samples/claw_v1_clawobservability.yaml"
+	@echo "=== All resources applied. Waiting for pods... ==="
+	@sleep 10
+	@$(KUBECTL) get pods -n clawbernetes
 	@echo ""
-	@echo "Then watch resources come up:"
-	@echo "  kubectl get pods -n clawbernetes -w"
+	@$(KUBECTL) get clawobservabilities -n clawbernetes
+	@$(KUBECTL) get clawagents -n clawbernetes
 	@echo ""
-	@echo "Open Grafana:"
-	@echo "  kubectl port-forward svc/grafana 3000:3000 -n clawbernetes"
-	@echo "  open http://localhost:3000"
-	@echo ""
+	@echo "Open Grafana:  kubectl port-forward svc/grafana 3000:3000 -n clawbernetes"
+	@echo "Watch pods:    kubectl get pods -n clawbernetes -w"
+	@echo "Operator log:  tail -f /tmp/clawbernetes-operator.log"
+	@echo "Tear down:     make demo-down"
+
+.PHONY: demo-down
+demo-down: ## Stop operator, delete all CRs, optionally tear down cluster.
+	@fuser -k 8081/tcp 2>/dev/null || true
+	@fuser -k 8080/tcp 2>/dev/null || true
+	@$(KUBECTL) delete clawagents --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawobservabilities --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawskillsets --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@echo "=== Demo stopped. Run 'make kind-teardown' to delete the cluster ==="
 
 ##@ Deployment
 
