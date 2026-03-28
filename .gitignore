@@ -32,3 +32,4 @@ go.work
 # Local environment secrets
 .env
 main
+.github/

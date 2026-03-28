@@ -26,10 +26,17 @@ spec:
               mountPath: /etc/nginx/nginx.conf
               subPath: nginx.conf
               readOnly: true
+            - name: fleet-dashboard
+              mountPath: /usr/share/nginx/fleet-dashboard
+              readOnly: true
       volumes:
         - name: config
           configMap:
             name: agent-proxy-config
+        - name: fleet-dashboard
+          configMap:
+            name: fleet-dashboard
+            optional: true
 ---
 apiVersion: v1
 kind: Service

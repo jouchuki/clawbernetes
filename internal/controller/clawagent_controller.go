@@ -177,7 +177,93 @@ func (r *ClawAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	log.Info("reconciled ClawAgent", "name", name, "phase", phase)
+
+	// --- Regenerate fleet dashboard HTML ---
+	if err := r.updateFleetDashboard(ctx, ns); err != nil {
+		log.Error(err, "unable to update fleet dashboard")
+		// Non-fatal: don't block reconciliation
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// updateFleetDashboard lists all ClawAgents, resolves their policies, and
+// writes the fleet config HTML to a shared ConfigMap.
+func (r *ClawAgentReconciler) updateFleetDashboard(ctx context.Context, ns string) error {
+	agentList := &clawv1.ClawAgentList{}
+	if err := r.List(ctx, agentList, client.InNamespace(ns)); err != nil {
+		return err
+	}
+
+	var infos []agentInfo
+	for _, a := range agentList.Items {
+		fallback := ""
+		if a.Spec.Model.Fallback != nil {
+			fallback = a.Spec.Model.Fallback.Name
+		}
+		hibernate := 0
+		if a.Spec.Lifecycle.HibernateAfterIdleMinutes != nil {
+			hibernate = *a.Spec.Lifecycle.HibernateAfterIdleMinutes
+		}
+		info := agentInfo{
+			Name:          a.Name,
+			Phase:         a.Status.Phase,
+			Provider:      a.Spec.Model.Provider,
+			Model:         a.Spec.Model.Name,
+			FallbackModel: fallback,
+			Gateway:       a.Spec.Gateway,
+			Policy:        a.Spec.Policy,
+			SkillSet:      a.Spec.SkillSet,
+			Observability: a.Spec.Observability,
+			Connectors:    a.Spec.Connectors,
+			RestartPolicy: a.Spec.Lifecycle.RestartPolicy,
+			MaxRuntime:    a.Spec.Lifecycle.MaxRuntime,
+			IdleHibernate: hibernate,
+		}
+
+		soul := a.Spec.Identity.Soul
+		if len(soul) > 100 {
+			soul = soul[:100] + "..."
+		}
+		info.Soul = soul
+
+		// Resolve policy for budget/tool info
+		if a.Spec.Policy != "" {
+			pol := &clawv1.ClawPolicy{}
+			if err := r.Get(ctx, types.NamespacedName{Name: a.Spec.Policy, Namespace: ns}, pol); err == nil {
+				info.BudgetDaily = pol.Spec.Budget.Daily
+				info.BudgetMonthly = pol.Spec.Budget.Monthly
+				info.DowngradeModel = pol.Spec.Budget.DowngradeModel
+				info.ToolDeny = pol.Spec.ToolPolicy.Deny
+			}
+		}
+
+		infos = append(infos, info)
+	}
+
+	html := generateFleetDashboardHTML(infos)
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fleet-dashboard",
+			Namespace: ns,
+			Labels:    map[string]string{"app": "fleet-dashboard", "app.kubernetes.io/managed-by": "clawbernetes"},
+		},
+		Data: map[string]string{
+			"index.html": html,
+		},
+	}
+
+	key := types.NamespacedName{Name: cm.Name, Namespace: cm.Namespace}
+	existing := &corev1.ConfigMap{}
+	if err := r.Get(ctx, key, existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return r.Create(ctx, cm)
+		}
+		return err
+	}
+	existing.Data = cm.Data
+	return r.Update(ctx, existing)
 }
 
 // ---------------------------------------------------------------------------

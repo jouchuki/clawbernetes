@@ -65,8 +65,9 @@ data:
       server {
         listen 80 default_server;
         location / {
-          default_type text/plain;
-          return 200 "Clawbernetes Agent Proxy\n\nAvailable hosts:\n  eng-agent.local    - Engineering Agent\n  sales-agent.local  - Sales Agent\n  grafana.local      - Grafana Dashboard\n";
+          root /usr/share/nginx/fleet-dashboard;
+          index index.html;
+          try_files $uri $uri/ /index.html;
         }
       }
     }
