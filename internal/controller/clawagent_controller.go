@@ -210,19 +210,19 @@ func (r *ClawAgentReconciler) agentDeployment(agent *clawv1.ClawAgent, ns, name,
 		Name:  "seed-workspace",
 		Image: "busybox:1.36",
 		Command: []string{"sh", "-c", strings.Join([]string{
-			"mkdir -p /workspace/skills",
+			"mkdir -p /openclaw-home/workspace/skills",
 			// Copy identity files if they exist in the ConfigMap mount.
-			"cp /identity-src/SOUL.md /workspace/SOUL.md 2>/dev/null || true",
-			"cp /identity-src/USER.md /workspace/USER.md 2>/dev/null || true",
-			"cp /identity-src/IDENTITY.md /workspace/IDENTITY.md 2>/dev/null || true",
+			"cp /identity-src/SOUL.md /openclaw-home/workspace/SOUL.md 2>/dev/null || true",
+			"cp /identity-src/USER.md /openclaw-home/workspace/USER.md 2>/dev/null || true",
+			"cp /identity-src/IDENTITY.md /openclaw-home/workspace/IDENTITY.md 2>/dev/null || true",
 			// Copy each skill into its own directory.
-			"for f in /skills-src/*; do [ -f \"$f\" ] && skill=$(basename \"$f\") && mkdir -p /workspace/skills/$skill && cp \"$f\" /workspace/skills/$skill/SKILL.md; done",
+			"for f in /skills-src/*; do [ -f \"$f\" ] && skill=$(basename \"$f\") && mkdir -p /openclaw-home/workspace/skills/$skill && cp \"$f\" /openclaw-home/workspace/skills/$skill/SKILL.md; done",
 			"echo 'workspace seeded'",
 		}, " && ")},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "identity-src", MountPath: "/identity-src", ReadOnly: true},
 			{Name: "skills-src", MountPath: "/skills-src", ReadOnly: true},
-			{Name: "workspace", MountPath: "/workspace"},
+			{Name: "openclaw-home", MountPath: "/openclaw-home"},
 		},
 	}
 
@@ -239,11 +239,12 @@ func (r *ClawAgentReconciler) agentDeployment(agent *clawv1.ClawAgent, ns, name,
 
 	// --- Main container ---
 	mainContainer := corev1.Container{
-		Name:  "openclaw",
-		Image: openclawImage,
-		Env:   env,
+		Name:            "openclaw",
+		Image:           openclawImage,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Env:             env,
 		VolumeMounts: []corev1.VolumeMount{
-			{Name: "workspace", MountPath: "/root/.openclaw/workspace"},
+			{Name: "openclaw-home", MountPath: "/home/node/.openclaw"},
 		},
 	}
 
@@ -258,7 +259,7 @@ func (r *ClawAgentReconciler) agentDeployment(agent *clawv1.ClawAgent, ns, name,
 	// --- Volumes ---
 	volumes := []corev1.Volume{
 		{
-			Name: "workspace",
+			Name: "openclaw-home",
 			VolumeSource: corev1.VolumeSource{
 				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
@@ -300,6 +301,11 @@ func (r *ClawAgentReconciler) agentDeployment(agent *clawv1.ClawAgent, ns, name,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
+					SecurityContext: &corev1.PodSecurityContext{
+						RunAsUser:  int64Ptr(1000),
+						RunAsGroup: int64Ptr(1000),
+						FSGroup:    int64Ptr(1000),
+					},
 					RestartPolicy:  restartPolicy,
 					InitContainers: []corev1.Container{initContainer},
 					Containers:     []corev1.Container{mainContainer},
@@ -348,6 +354,10 @@ func agentLabels(name string) map[string]string {
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+func int64Ptr(i int64) *int64 {
+	return &i
 }
 
 // SetupWithManager sets up the controller with the Manager.
