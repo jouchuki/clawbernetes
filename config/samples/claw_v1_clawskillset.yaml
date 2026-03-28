@@ -1,9 +1,23 @@
 apiVersion: claw.clawbernetes.io/v1
 kind: ClawSkillSet
 metadata:
-  labels:
-    app.kubernetes.io/name: hackaway-repo
-    app.kubernetes.io/managed-by: kustomize
-  name: clawskillset-sample
+  name: engineering-skills
+  namespace: clawbernetes
 spec:
-  # TODO(user): Add fields here
+  skills:
+    - name: kubernetes-debugging
+      content: |
+        # Kubernetes Debugging
+        When debugging a Kubernetes issue, always start with kubectl describe
+        before kubectl logs. Check events first. Never kubectl delete a pod
+        you haven't diagnosed yet.
+    - name: database-safety
+      content: |
+        # Database Safety
+        Never run DROP, TRUNCATE, or DELETE without a WHERE clause.
+        Always run SELECT first to verify what you're about to modify.
+    - name: code-review
+      content: |
+        # Code Review Standards
+        Check for: missing error handling, hardcoded secrets, SQL injection
+        vectors, missing input validation. Always comment on test coverage.

@@ -59,3 +59,11 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - claw.clawbernetes.io
+  resources:
+  - clawskillsets
+  verbs:
+  - get
+  - list
+  - watch
