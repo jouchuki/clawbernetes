@@ -1,119 +1,57 @@
 {
   "uid": "clawbernetes-fleet",
   "title": "Clawbernetes Fleet Overview",
-  "description": "Fleet-wide monitoring for Clawbernetes AI agents: trace counts, active agents, recent LLM calls, and performance metrics sourced from Tempo.",
-  "tags": [
-    "clawbernetes",
-    "fleet",
-    "agents"
-  ],
+  "description": "Fleet-wide monitoring for Clawbernetes AI agents.",
+  "tags": ["clawbernetes", "fleet", "agents"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
-  "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "refresh": "30s",
-  "time": {
-    "from": "now-1h",
-    "to": "now"
-  },
+  "time": { "from": "now-3h", "to": "now" },
   "timepicker": {},
-  "templating": {
-    "list": []
-  },
-  "annotations": {
-    "list": []
-  },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
   "links": [],
   "panels": [
     {
       "id": 100,
       "type": "row",
       "title": "Fleet Overview",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "collapsed": false,
-      "panels": []
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false
     },
     {
       "id": 1,
       "type": "stat",
-      "title": "Total Traces",
-      "description": "Total number of LLM chat traces in the selected time range.",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 1
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "title": "Total LLM Calls",
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 1 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
-          "queryType": "traceqlSearch",
-          "filters": [
-            {
-              "id": "span-attr",
-              "tag": "gen_ai.operation.name",
-              "operator": "=",
-              "value": [
-                "chat"
-              ],
-              "scope": "span"
-            }
-          ]
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{span.gen_ai.operation.name = \"chat\"}",
+          "tableType": "traces",
+          "limit": 500
         }
       ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "count"
-          ],
-          "fields": "",
-          "values": false
-        },
+        "reduceOptions": { "calcs": ["count"], "fields": "/traceID/", "values": false },
         "colorMode": "background",
         "graphMode": "none",
-        "justifyMode": "auto",
         "textMode": "auto",
-        "wideLayout": true,
         "orientation": "auto"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 10
-              },
-              {
-                "color": "yellow",
-                "value": 100
-              }
-            ]
-          },
-          "mappings": []
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "blue", "value": null },
+            { "color": "green", "value": 5 }
+          ]}
         },
         "overrides": []
       }
@@ -122,27 +60,16 @@
       "id": 2,
       "type": "stat",
       "title": "Active Agents",
-      "description": "Count of distinct service.name values that have emitted traces.",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 1
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 1 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
+          "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
           "query": "{span.gen_ai.operation.name = \"chat\"}",
-          "tableType": "traces"
+          "tableType": "traces",
+          "limit": 500
         }
       ],
       "transformations": [
@@ -150,58 +77,29 @@
           "id": "groupBy",
           "options": {
             "fields": {
-              "serviceName": {
-                "aggregations": [
-                  "uniqueValues"
-                ],
-                "operation": "groupby"
-              }
+              "traceService": { "aggregations": ["uniqueValues"], "operation": "groupby" }
             }
           }
         },
         {
           "id": "reduce",
-          "options": {
-            "reducers": [
-              "count"
-            ]
-          }
+          "options": { "reducers": ["count"] }
         }
       ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "colorMode": "background",
         "graphMode": "none",
-        "justifyMode": "auto",
         "textMode": "auto",
-        "wideLayout": true,
         "orientation": "auto"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": []
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "purple", "value": null },
+            { "color": "green", "value": 1 }
+          ]}
         },
         "overrides": []
       }
@@ -210,246 +108,123 @@
       "id": 3,
       "type": "table",
       "title": "Recent LLM Calls",
-      "description": "Most recent agent LLM invocations showing agent name, model, call duration, and token counts.",
-      "gridPos": {
-        "h": 10,
-        "w": 16,
-        "x": 8,
-        "y": 1
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "gridPos": { "h": 10, "w": 16, "x": 8, "y": 1 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
+          "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
           "query": "{span.gen_ai.operation.name = \"chat\"}",
           "tableType": "traces",
-          "limit": 50
+          "limit": 20
         }
       ],
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "countRows": false
-        },
-        "sortBy": []
+        "sortBy": [{ "displayName": "Start time", "desc": true }]
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Duration"
-            },
+            "matcher": { "id": "byName", "options": "traceDuration" },
             "properties": [
-              {
-                "id": "unit",
-                "value": "ns"
-              },
-              {
-                "id": "custom.width",
-                "value": 120
-              }
+              { "id": "unit", "value": "ns" },
+              { "id": "displayName", "value": "Duration" }
             ]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "serviceName"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Agent"
-              },
-              {
-                "id": "custom.width",
-                "value": 150
-              }
-            ]
+            "matcher": { "id": "byName", "options": "traceService" },
+            "properties": [{ "id": "displayName", "value": "Agent" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "traceName" },
+            "properties": [{ "id": "displayName", "value": "Operation" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "nested" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
           }
         ]
       }
     },
     {
       "id": 4,
-      "type": "stat",
-      "title": "Gateway-Routed Calls",
-      "description": "Number of LLM calls routed through the ClawGateway cost proxy.",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 5
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "type": "piechart",
+      "title": "Calls by Agent",
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 6 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
-          "queryType": "traceqlSearch",
-          "filters": [
-            {
-              "id": "span-attr-gw",
-              "tag": "openclaw.provider",
-              "operator": "=",
-              "value": [
-                "gateway-anthropic"
-              ],
-              "scope": "span"
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{span.gen_ai.operation.name = \"chat\"}",
+          "tableType": "traces",
+          "limit": 500
+        }
+      ],
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "traceService": { "aggregations": [], "operation": "groupby" },
+              "traceID": { "aggregations": ["count"], "operation": "aggregate" }
             }
-          ]
+          }
         }
       ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "count"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "orientation": "auto"
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": true },
+        "pieType": "donut",
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
       },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "dark-orange",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": []
-        },
+        "defaults": { "color": { "mode": "palette-classic" } },
         "overrides": []
       }
     },
     {
       "id": 5,
-      "type": "stat",
-      "title": "Direct Provider Calls",
-      "description": "Number of LLM calls made directly (not through gateway).",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 5
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "type": "piechart",
+      "title": "Calls by Operation",
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 6 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
-          "queryType": "traceqlSearch",
-          "filters": [
-            {
-              "id": "span-attr-direct",
-              "tag": "openclaw.provider",
-              "operator": "=",
-              "value": [
-                "anthropic"
-              ],
-              "scope": "span"
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{span.gen_ai.operation.name = \"chat\"}",
+          "tableType": "traces",
+          "limit": 500
+        }
+      ],
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "traceName": { "aggregations": [], "operation": "groupby" },
+              "traceID": { "aggregations": ["count"], "operation": "aggregate" }
             }
-          ]
+          }
         }
       ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "count"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "orientation": "auto"
+        "reduceOptions": { "calcs": ["lastNotNull"], "values": true },
+        "pieType": "donut",
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
       },
       "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "dark-blue",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              }
-            ]
-          },
-          "mappings": []
-        },
+        "defaults": { "color": { "mode": "palette-classic" } },
         "overrides": []
       }
     },
@@ -457,129 +232,42 @@
       "id": 200,
       "type": "row",
       "title": "Agent Activity",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 11
-      },
-      "collapsed": false,
-      "panels": []
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 11 },
+      "collapsed": false
     },
     {
       "id": 6,
       "type": "table",
-      "title": "TraceQL Search: Agent Traces",
-      "description": "Search traces by agent. Use the query editor to filter by resource.service.name or any span attribute.",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 0,
-        "y": 12
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "title": "eng-agent Traces",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
-          "queryType": "traceqlSearch",
-          "filters": [
-            {
-              "id": "service-name",
-              "tag": "service.name",
-              "operator": "=",
-              "value": [],
-              "scope": "resource"
-            },
-            {
-              "id": "chat-filter",
-              "tag": "gen_ai.operation.name",
-              "operator": "=",
-              "value": [
-                "chat"
-              ],
-              "scope": "span"
-            }
-          ],
-          "limit": 50
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{resource.service.name = \"eng-agent\" && span.gen_ai.operation.name = \"chat\"}",
+          "tableType": "traces",
+          "limit": 20
         }
       ],
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "countRows": false
-        },
-        "sortBy": [
-          {
-            "displayName": "Start time",
-            "desc": true
-          }
-        ]
+        "sortBy": [{ "displayName": "Start time", "desc": true }]
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Duration"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "ns"
-              }
-            ]
+            "matcher": { "id": "byName", "options": "traceDuration" },
+            "properties": [{ "id": "unit", "value": "ns" }, { "id": "displayName", "value": "Duration" }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "traceID"
-            },
-            "properties": [
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "View Trace",
-                    "url": "/explore?left=%7B%22datasource%22:%22tempo%22,%22queries%22:%5B%7B%22queryType%22:%22traceql%22,%22query%22:%22${__value.raw}%22%7D%5D%7D",
-                    "targetBlank": true
-                  }
-                ]
-              }
-            ]
+            "matcher": { "id": "byName", "options": "nested" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
           }
         ]
       }
@@ -587,121 +275,36 @@
     {
       "id": 7,
       "type": "table",
-      "title": "Recent Traces with Model & Duration",
-      "description": "Latest traces showing trace ID, service name, model, duration, and token usage.",
-      "gridPos": {
-        "h": 10,
-        "w": 12,
-        "x": 12,
-        "y": 12
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "title": "sales-agent Traces",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
+          "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
-          "query": "{span.gen_ai.operation.name = \"chat\"}",
+          "query": "{resource.service.name = \"sales-agent\" && span.gen_ai.operation.name = \"chat\"}",
           "tableType": "traces",
-          "limit": 30
+          "limit": 20
         }
       ],
       "options": {
         "showHeader": true,
         "cellHeight": "sm",
-        "footer": {
-          "show": false,
-          "reducer": [
-            "sum"
-          ],
-          "countRows": false
-        },
-        "sortBy": [
-          {
-            "displayName": "Start time",
-            "desc": true
-          }
-        ]
+        "sortBy": [{ "displayName": "Start time", "desc": true }]
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
         },
         "overrides": [
           {
-            "matcher": {
-              "id": "byName",
-              "options": "Duration"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "ns"
-              },
-              {
-                "id": "custom.width",
-                "value": 120
-              }
-            ]
+            "matcher": { "id": "byName", "options": "traceDuration" },
+            "properties": [{ "id": "unit", "value": "ns" }, { "id": "displayName", "value": "Duration" }]
           },
           {
-            "matcher": {
-              "id": "byName",
-              "options": "serviceName"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Agent"
-              },
-              {
-                "id": "custom.width",
-                "value": 150
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "traceID"
-            },
-            "properties": [
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "View Trace",
-                    "url": "/explore?left=%7B%22datasource%22:%22tempo%22,%22queries%22:%5B%7B%22queryType%22:%22traceql%22,%22query%22:%22${__value.raw}%22%7D%5D%7D",
-                    "targetBlank": true
-                  }
-                ]
-              }
-            ]
+            "matcher": { "id": "byName", "options": "nested" },
+            "properties": [{ "id": "custom.hidden", "value": true }]
           }
         ]
       }
@@ -710,41 +313,23 @@
       "id": 300,
       "type": "row",
       "title": "Performance",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 22
-      },
-      "collapsed": false,
-      "panels": []
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 20 },
+      "collapsed": false
     },
     {
       "id": 8,
       "type": "bargauge",
       "title": "Average Call Duration per Agent",
-      "description": "Average span duration for LLM chat calls broken down by agent (service.name).",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 23
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 21 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
+          "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
           "query": "{span.gen_ai.operation.name = \"chat\"}",
           "tableType": "traces",
-          "limit": 100
+          "limit": 200
         }
       ],
       "transformations": [
@@ -752,151 +337,63 @@
           "id": "groupBy",
           "options": {
             "fields": {
-              "serviceName": {
-                "aggregations": [],
-                "operation": "groupby"
-              },
-              "Duration": {
-                "aggregations": [
-                  "mean"
-                ],
-                "operation": "aggregate"
-              }
+              "traceService": { "aggregations": [], "operation": "groupby" },
+              "traceDuration": { "aggregations": ["mean"], "operation": "aggregate" }
             }
           }
         }
       ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/Duration/",
-          "values": false
-        },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/traceDuration/", "values": true },
         "displayMode": "gradient",
         "orientation": "horizontal",
-        "valueMode": "color",
         "showUnfilled": true,
-        "minVizWidth": 8,
-        "minVizHeight": 16,
         "namePlacement": "auto"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ns",
-          "color": {
-            "mode": "continuous-BlYlRd"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5000000000
-              },
-              {
-                "color": "red",
-                "value": 30000000000
-              }
-            ]
-          },
-          "mappings": []
+          "color": { "mode": "continuous-BlYlRd" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 5000000000 },
+            { "color": "red", "value": 30000000000 }
+          ]}
         },
         "overrides": []
       }
     },
     {
       "id": 9,
-      "type": "bargauge",
-      "title": "Average Call Duration per Model",
-      "description": "Average span duration for LLM chat calls broken down by model.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 23
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "type": "stat",
+      "title": "Avg Duration",
+      "gridPos": { "h": 7, "w": 4, "x": 12, "y": 21 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
+          "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
           "query": "{span.gen_ai.operation.name = \"chat\"}",
           "tableType": "traces",
-          "limit": 100
-        }
-      ],
-      "transformations": [
-        {
-          "id": "groupBy",
-          "options": {
-            "fields": {
-              "span.openclaw.model": {
-                "aggregations": [],
-                "operation": "groupby"
-              },
-              "Duration": {
-                "aggregations": [
-                  "mean"
-                ],
-                "operation": "aggregate"
-              }
-            }
-          }
+          "limit": 200
         }
       ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/Duration/",
-          "values": false
-        },
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "valueMode": "color",
-        "showUnfilled": true,
-        "minVizWidth": 8,
-        "minVizHeight": 16,
-        "namePlacement": "auto"
+        "reduceOptions": { "calcs": ["mean"], "fields": "/traceDuration/", "values": false },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "ns",
-          "color": {
-            "mode": "continuous-BlYlRd"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 5000000000
-              },
-              {
-                "color": "red",
-                "value": 30000000000
-              }
-            ]
-          },
-          "mappings": []
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 5000000000 },
+            { "color": "red", "value": 15000000000 }
+          ]}
         },
         "overrides": []
       }
@@ -904,76 +401,34 @@
     {
       "id": 10,
       "type": "stat",
-      "title": "Total Input Tokens",
-      "description": "Sum of input tokens across all LLM calls.",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 31
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "title": "Max Duration",
+      "gridPos": { "h": 7, "w": 4, "x": 16, "y": 21 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
+          "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
           "query": "{span.gen_ai.operation.name = \"chat\"}",
           "tableType": "traces",
           "limit": 200
         }
       ],
-      "transformations": [
-        {
-          "id": "reduce",
-          "options": {
-            "reducers": [
-              "sum"
-            ],
-            "includeTimeField": false
-          }
-        }
-      ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/tokens\\.input/",
-          "values": false
-        },
+        "reduceOptions": { "calcs": ["max"], "fields": "/traceDuration/", "values": false },
         "colorMode": "background",
         "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "orientation": "auto"
+        "textMode": "auto"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "super-light-blue",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 10000
-              }
-            ]
-          },
-          "mappings": []
+          "unit": "ns",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 10000000000 },
+            { "color": "red", "value": 30000000000 }
+          ]}
         },
         "overrides": []
       }
@@ -981,230 +436,34 @@
     {
       "id": 11,
       "type": "stat",
-      "title": "Total Output Tokens",
-      "description": "Sum of output tokens across all LLM calls.",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 31
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
+      "title": "P95 Duration",
+      "gridPos": { "h": 7, "w": 4, "x": 20, "y": 21 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
+          "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
           "query": "{span.gen_ai.operation.name = \"chat\"}",
           "tableType": "traces",
           "limit": 200
         }
       ],
-      "transformations": [
-        {
-          "id": "reduce",
-          "options": {
-            "reducers": [
-              "sum"
-            ],
-            "includeTimeField": false
-          }
-        }
-      ],
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/tokens\\.output/",
-          "values": false
-        },
+        "reduceOptions": { "calcs": ["percentile95"], "fields": "/traceDuration/", "values": false },
         "colorMode": "background",
         "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "orientation": "auto"
+        "textMode": "auto"
       },
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "super-light-green",
-                "value": null
-              },
-              {
-                "color": "green",
-                "value": 10000
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 12,
-      "type": "stat",
-      "title": "Total Tokens (All Types)",
-      "description": "Sum of all token types across all LLM calls.",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 31
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
-          "queryType": "traceql",
-          "query": "{span.gen_ai.operation.name = \"chat\"}",
-          "tableType": "traces",
-          "limit": 200
-        }
-      ],
-      "transformations": [
-        {
-          "id": "reduce",
-          "options": {
-            "reducers": [
-              "sum"
-            ],
-            "includeTimeField": false
-          }
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/tokens\\.total/",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "super-light-yellow",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 50000
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 13,
-      "type": "stat",
-      "title": "Cache Read Tokens",
-      "description": "Sum of cache read tokens, indicating prompt cache efficiency.",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 31
-      },
-      "datasource": {
-        "type": "tempo",
-        "uid": "tempo"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "tempo",
-            "uid": "tempo"
-          },
-          "queryType": "traceql",
-          "query": "{span.gen_ai.operation.name = \"chat\"}",
-          "tableType": "traces",
-          "limit": 200
-        }
-      ],
-      "transformations": [
-        {
-          "id": "reduce",
-          "options": {
-            "reducers": [
-              "sum"
-            ],
-            "includeTimeField": false
-          }
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "/cache_read/",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "auto",
-        "wideLayout": true,
-        "orientation": "auto"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "light-purple",
-                "value": null
-              },
-              {
-                "color": "purple",
-                "value": 5000
-              }
-            ]
-          },
-          "mappings": []
+          "unit": "ns",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 10000000000 },
+            { "color": "red", "value": 30000000000 }
+          ]}
         },
         "overrides": []
       }
