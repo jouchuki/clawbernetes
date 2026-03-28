@@ -1,0 +1,9 @@
+apiVersion: claw.clawbernetes.io/v1
+kind: ClawSkillSet
+metadata:
+  labels:
+    app.kubernetes.io/name: hackaway-repo
+    app.kubernetes.io/managed-by: kustomize
+  name: clawskillset-sample
+spec:
+  # TODO(user): Add fields here

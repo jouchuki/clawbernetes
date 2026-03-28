@@ -1,0 +1,9 @@
+## Append samples of your project ##
+resources:
+- claw_v1_clawobservability.yaml
+- claw_v1_clawagent.yaml
+- claw_v1_clawgateway.yaml
+- claw_v1_clawpolicy.yaml
+- claw_v1_clawskillset.yaml
+- claw_v1_clawconnector.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

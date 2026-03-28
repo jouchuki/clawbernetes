@@ -1,0 +1,23 @@
+apiVersion: claw.clawbernetes.io/v1
+kind: ClawObservability
+metadata:
+  name: fleet-observability
+  namespace: clawbernetes
+spec:
+  tempo:
+    enabled: true
+    retentionDays: 7
+    storage:
+      size: 10Gi
+      storageClass: ""
+  grafana:
+    enabled: true
+    dashboards:
+      - fleet-overview
+      - agent-detail
+      - anomaly-feed
+      - budget-tracker
+    adminCredentialsSecret: grafana-admin-credentials
+    expose: port-forward
+  otlpEndpoint: "http://tempo.clawbernetes.svc.cluster.local:4318"
+  otlpProtocol: http/protobuf
