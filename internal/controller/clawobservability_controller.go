@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -33,6 +34,9 @@ import (
 
 	clawv1 "github.com/clawbernetes/operator/api/v1"
 )
+
+//go:embed fleet-overview-dashboard.json
+var fleetOverviewDashboardJSON string
 
 // ClawObservabilityReconciler reconciles a ClawObservability object
 type ClawObservabilityReconciler struct {
@@ -81,6 +85,9 @@ func (r *ClawObservabilityReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			return ctrl.Result{}, err
 		}
 		if err := r.ensureResource(ctx, obs, r.grafanaDashboardConfigMap(ns), "grafana-dashboard-cm"); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.ensureResource(ctx, obs, r.grafanaDashboardJSONConfigMap(ns), "grafana-dashboard-json-cm"); err != nil {
 			return ctrl.Result{}, err
 		}
 		if err := r.ensureResource(ctx, obs, r.grafanaDeployment(ns), "grafana-deployment"); err != nil {
@@ -299,6 +306,19 @@ providers:
 	}
 }
 
+func (r *ClawObservabilityReconciler) grafanaDashboardJSONConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "grafana-dashboard-json",
+			Namespace: ns,
+			Labels:    map[string]string{"app": "grafana", "app.kubernetes.io/managed-by": "clawbernetes"},
+		},
+		Data: map[string]string{
+			"fleet-overview.json": fleetOverviewDashboardJSON,
+		},
+	}
+}
+
 func (r *ClawObservabilityReconciler) grafanaDeployment(ns string) *appsv1.Deployment {
 	labels := map[string]string{"app": "grafana", "app.kubernetes.io/managed-by": "clawbernetes"}
 	replicas := int32(1)
@@ -330,6 +350,7 @@ func (r *ClawObservabilityReconciler) grafanaDeployment(ns string) *appsv1.Deplo
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "datasources", MountPath: "/etc/grafana/provisioning/datasources", ReadOnly: true},
 								{Name: "dashboard-provider", MountPath: "/etc/grafana/provisioning/dashboards", ReadOnly: true},
+								{Name: "dashboard-json", MountPath: "/var/lib/grafana/dashboards", ReadOnly: true},
 							},
 						},
 					},
@@ -347,6 +368,14 @@ func (r *ClawObservabilityReconciler) grafanaDeployment(ns string) *appsv1.Deplo
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{Name: "grafana-dashboards"},
+								},
+							},
+						},
+						{
+							Name: "dashboard-json",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "grafana-dashboard-json"},
 								},
 							},
 						},
