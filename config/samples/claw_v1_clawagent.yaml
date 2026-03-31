@@ -47,3 +47,13 @@ spec:
     mode: persistent
     storageSize: "10Gi"
   credentialsSecret: eng-agent-credentials
+  a2a:
+    enabled: true
+    agentCardName: "Engineering Agent"
+    agentCardDescription: "Senior infrastructure specialist for the cluster"
+    skills: [kubernetes, debugging, code-review]
+    securityTokenSecret: eng-a2a-token
+    peers:
+      - name: sales-agent
+        agentCardUrl: http://sales-agent.clawbernetes.svc.cluster.local:18800/.well-known/agent-card.json
+        credentialsSecret: sales-a2a-token

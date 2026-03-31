@@ -720,4 +720,135 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 			}
 		})
 	})
+
+	// -----------------------------------------------------------------------
+	// Test: A2A gateway plugin configuration
+	// -----------------------------------------------------------------------
+	Context("with A2A enabled", func() {
+		const agentName = "test-a2a"
+
+		BeforeEach(func() {
+			agent := &clawv1.ClawAgent{
+				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
+				Spec: clawv1.ClawAgentSpec{
+					A2A: clawv1.A2ASpec{
+						Enabled:              true,
+						AgentCardName:        "Test A2A Agent",
+						AgentCardDescription: "A test agent for A2A",
+						Skills:               []string{"code-review", "debugging"},
+						SecurityTokenSecret:  "a2a-token-secret",
+						Peers: []clawv1.A2APeer{
+							{
+								Name:              "peer-agent",
+								AgentCardURL:      "http://peer-agent.default.svc.cluster.local:18800/.well-known/agent-card.json",
+								CredentialsSecret: "peer-token-secret",
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, agent)).To(Succeed())
+			reconcileAgent(agentName)
+		})
+
+		AfterEach(func() {
+			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: agentName, Namespace: ns})
+		})
+
+		It("should generate a2a-gateway plugin config in openclaw.json", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			var cfg map[string]any
+			Expect(json.Unmarshal([]byte(cm.Data["openclaw.json"]), &cfg)).To(Succeed())
+
+			plugins := cfg["plugins"].(map[string]any)["entries"].(map[string]any)
+			a2a, ok := plugins["a2a-gateway"].(map[string]any)
+			Expect(ok).To(BeTrue(), "a2a-gateway plugin must be present")
+			Expect(a2a["enabled"]).To(Equal(true))
+
+			config := a2a["config"].(map[string]any)
+			card := config["agentCard"].(map[string]any)
+			Expect(card["name"]).To(Equal("Test A2A Agent"))
+			Expect(card["description"]).To(Equal("A test agent for A2A"))
+			Expect(card["url"]).To(ContainSubstring(agentName))
+			Expect(card["url"]).To(ContainSubstring("18800"))
+
+			server := config["server"].(map[string]any)
+			Expect(server["host"]).To(Equal("0.0.0.0"))
+			Expect(server["port"]).To(BeNumerically("==", 18800))
+
+			security := config["security"].(map[string]any)
+			Expect(security["token"]).To(Equal("${A2A_TOKEN}"))
+
+			peers := config["peers"].([]any)
+			Expect(peers).To(HaveLen(1))
+			peer := peers[0].(map[string]any)
+			Expect(peer["name"]).To(Equal("peer-agent"))
+			auth := peer["auth"].(map[string]any)
+			Expect(auth["token"]).To(Equal("${PEER_PEER_AGENT_TOKEN}"))
+		})
+
+		It("should expose A2A port on container and service", func() {
+			dep := getDeployment(agentName)
+			mc := mainContainer(dep)
+			hasA2APort := false
+			for _, p := range mc.Ports {
+				if p.Name == "a2a" && p.ContainerPort == 18800 {
+					hasA2APort = true
+				}
+			}
+			Expect(hasA2APort).To(BeTrue(), "A2A port must be exposed on container")
+		})
+
+		It("should inject A2A security and peer credential secrets", func() {
+			dep := getDeployment(agentName)
+			mc := mainContainer(dep)
+			secretNames := map[string]bool{}
+			for _, ef := range mc.EnvFrom {
+				if ef.SecretRef != nil {
+					secretNames[ef.SecretRef.Name] = true
+				}
+			}
+			Expect(secretNames).To(HaveKey("a2a-token-secret"))
+			Expect(secretNames).To(HaveKey("peer-token-secret"))
+		})
+
+		It("should include a2a-gateway in plugins.allow", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			var cfg map[string]any
+			Expect(json.Unmarshal([]byte(cm.Data["openclaw.json"]), &cfg)).To(Succeed())
+			plugins := cfg["plugins"].(map[string]any)
+			allow, ok := plugins["allow"].([]any)
+			Expect(ok).To(BeTrue())
+			Expect(allow).To(ContainElement("a2a-gateway"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// Test: A2A disabled — no plugin config
+	// -----------------------------------------------------------------------
+	Context("with A2A not enabled", func() {
+		const agentName = "test-no-a2a"
+
+		BeforeEach(func() {
+			agent := &clawv1.ClawAgent{
+				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
+				Spec:       clawv1.ClawAgentSpec{},
+			}
+			Expect(k8sClient.Create(ctx, agent)).To(Succeed())
+			reconcileAgent(agentName)
+		})
+
+		AfterEach(func() {
+			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: agentName, Namespace: ns})
+		})
+
+		It("should NOT have a2a-gateway in plugins", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			var cfg map[string]any
+			Expect(json.Unmarshal([]byte(cm.Data["openclaw.json"]), &cfg)).To(Succeed())
+			plugins := cfg["plugins"].(map[string]any)["entries"].(map[string]any)
+			_, hasA2A := plugins["a2a-gateway"]
+			Expect(hasA2A).To(BeFalse())
+		})
+	})
 })
