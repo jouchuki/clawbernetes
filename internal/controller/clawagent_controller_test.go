@@ -799,17 +799,28 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 			Expect(hasA2APort).To(BeTrue(), "A2A port must be exposed on container")
 		})
 
-		It("should inject A2A security and peer credential secrets", func() {
+		It("should inject A2A security token via EnvFrom and peer token via Env", func() {
 			dep := getDeployment(agentName)
 			mc := mainContainer(dep)
-			secretNames := map[string]bool{}
+			// Security token comes via EnvFrom (whole secret).
+			envFromSecrets := map[string]bool{}
 			for _, ef := range mc.EnvFrom {
 				if ef.SecretRef != nil {
-					secretNames[ef.SecretRef.Name] = true
+					envFromSecrets[ef.SecretRef.Name] = true
 				}
 			}
-			Expect(secretNames).To(HaveKey("a2a-token-secret"))
-			Expect(secretNames).To(HaveKey("peer-token-secret"))
+			Expect(envFromSecrets).To(HaveKey("a2a-token-secret"))
+
+			// Peer token comes via Env with secretKeyRef.
+			peerEnvFound := false
+			for _, e := range mc.Env {
+				if e.Name == "PEER_PEER_AGENT_TOKEN" && e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil {
+					Expect(e.ValueFrom.SecretKeyRef.Name).To(Equal("peer-token-secret"))
+					Expect(e.ValueFrom.SecretKeyRef.Key).To(Equal("A2A_TOKEN"))
+					peerEnvFound = true
+				}
+			}
+			Expect(peerEnvFound).To(BeTrue(), "PEER_PEER_AGENT_TOKEN env var must reference peer-token-secret")
 		})
 
 		It("should include a2a-gateway in plugins.allow", func() {

@@ -830,11 +830,24 @@ func (r *ClawAgentReconciler) agentDeployment(p deploymentParams) *appsv1.Deploy
 		mainContainer.Ports = append(mainContainer.Ports, corev1.ContainerPort{
 			Name: "a2a", ContainerPort: int32(a2aPort), Protocol: corev1.ProtocolTCP,
 		})
-		// Inject security token secret.
+		// Inject security token secret (A2A_TOKEN key → A2A_TOKEN env var).
 		injectSecret(agent.Spec.A2A.SecurityTokenSecret)
-		// Inject peer credential secrets.
+		// Inject peer credential secrets as PEER_<NAME>_TOKEN env vars.
+		// Each peer secret has key A2A_TOKEN, mapped to a unique env var name.
 		for _, peer := range agent.Spec.A2A.Peers {
-			injectSecret(peer.CredentialsSecret)
+			if peer.CredentialsSecret != "" {
+				envName := fmt.Sprintf("PEER_%s_TOKEN", strings.ToUpper(strings.ReplaceAll(peer.Name, "-", "_")))
+				mainContainer.Env = append(mainContainer.Env, corev1.EnvVar{
+					Name: envName,
+					ValueFrom: &corev1.EnvVarSource{
+						SecretKeyRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{Name: peer.CredentialsSecret},
+							Key:                  "A2A_TOKEN",
+							Optional:             boolPtr(true),
+						},
+					},
+				})
+			}
 		}
 	}
 
@@ -1242,6 +1255,10 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, ns, n
 	}
 	if len(pluginAllow) > 0 {
 		pluginsCfg["allow"] = pluginAllow
+		// Tell OpenClaw where to find the a2a-gateway plugin.
+		pluginsCfg["load"] = map[string]any{
+			"paths": []string{"/home/node/.openclaw/workspace/plugins/a2a-gateway"},
+		}
 	}
 	cfg["plugins"] = pluginsCfg
 
