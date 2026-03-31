@@ -629,6 +629,7 @@ func (r *ClawAgentReconciler) openclawConfigMap(agent *clawv1.ClawAgent, ns, nam
 		Data: map[string]string{
 			"openclaw.json": r.buildOpenclawConfig(agent, ns, name, gatewayURL, otlpEndpoint, policy, gateway, channels),
 			"HEARTBEAT.md":  r.heartbeatMD(name),
+			"TOOLS.md":      r.toolsMD(agent, ns, name),
 		},
 	}
 }
@@ -683,6 +684,7 @@ func (r *ClawAgentReconciler) agentDeployment(p deploymentParams) *appsv1.Deploy
 			"cp -r /openclaw-home/workspace-plugins/* /openclaw-home/workspace/plugins/ 2>/dev/null || true",
 			"cp /config-src/openclaw.json /openclaw-home/openclaw.json",
 			"cp /config-src/HEARTBEAT.md /openclaw-home/workspace/HEARTBEAT.md",
+			"cp /config-src/TOOLS.md /openclaw-home/workspace/TOOLS.md 2>/dev/null || true",
 			"cp /identity-src/SOUL.md /openclaw-home/workspace/SOUL.md 2>/dev/null || true",
 			"cp /identity-src/USER.md /openclaw-home/workspace/USER.md 2>/dev/null || true",
 			"cp /identity-src/IDENTITY.md /openclaw-home/workspace/IDENTITY.md 2>/dev/null || true",
@@ -1176,7 +1178,11 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, ns, n
 	}
 
 	// --- A2A gateway plugin configuration ---
-	pluginAllow := []string{}
+	// Build plugins.allow — must include ALL active plugins or OpenClaw blocks them.
+	pluginAllow := []string{"observeclaw"}
+	for _, ch := range channels {
+		pluginAllow = append(pluginAllow, ch.Spec.Type)
+	}
 	if agent.Spec.A2A.Enabled {
 		a2aPort := agent.Spec.A2A.ResolvedPort()
 		cardName := agent.Spec.A2A.AgentCardName
@@ -1255,10 +1261,10 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, ns, n
 	pluginsCfg := map[string]any{
 		"enabled": true,
 		"entries": pluginEntries,
+		"allow":   pluginAllow,
 	}
-	if len(pluginAllow) > 0 {
-		pluginsCfg["allow"] = pluginAllow
-		// Tell OpenClaw where to find the a2a-gateway plugin.
+	// Tell OpenClaw where to find the a2a-gateway plugin if A2A is enabled.
+	if agent.Spec.A2A.Enabled {
 		pluginsCfg["load"] = map[string]any{
 			"paths": []string{"/home/node/.openclaw/workspace/plugins/a2a-gateway"},
 		}
@@ -1482,6 +1488,49 @@ Only raise an alert if something needs attention.
 - Are my tools accessible?
 - Is my workspace intact?
 `, name)
+}
+
+// toolsMD generates TOOLS.md with A2A peer information so the agent knows
+// how to discover and communicate with other agents in the fleet.
+func (r *ClawAgentReconciler) toolsMD(agent *clawv1.ClawAgent, ns, name string) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("# Tools — %s\n\n", name))
+
+	if agent.Spec.A2A.Enabled && len(agent.Spec.A2A.Peers) > 0 {
+		b.WriteString("## A2A Gateway (Agent-to-Agent Communication)\n\n")
+		b.WriteString("You have an A2A Gateway plugin running on port 18800. You can talk to other agents.\n\n")
+		b.WriteString("### Peers\n\n")
+		b.WriteString("| Peer | Agent Card URL |\n")
+		b.WriteString("|------|---------------|\n")
+		for _, p := range agent.Spec.A2A.Peers {
+			b.WriteString(fmt.Sprintf("| %s | %s |\n", p.Name, p.AgentCardURL))
+		}
+
+		b.WriteString("\n### How to send a message to a peer\n\n")
+		b.WriteString("Use the exec tool to run:\n\n")
+		b.WriteString("```bash\n")
+		b.WriteString("node /home/node/.openclaw/workspace/plugins/a2a-gateway/skill/scripts/a2a-send.mjs \\\n")
+		b.WriteString("  --peer-url http://<PEER_NAME>." + ns + ".svc.cluster.local:18800 \\\n")
+		b.WriteString("  --token \"$PEER_<PEER_NAME_UPPER>_TOKEN\" \\\n")
+		b.WriteString("  --non-blocking --wait \\\n")
+		b.WriteString("  --message \"YOUR MESSAGE HERE\"\n")
+		b.WriteString("```\n\n")
+
+		b.WriteString("### Quick reference for each peer\n\n")
+		for _, p := range agent.Spec.A2A.Peers {
+			envVar := fmt.Sprintf("PEER_%s_TOKEN", strings.ToUpper(strings.ReplaceAll(p.Name, "-", "_")))
+			peerURL := fmt.Sprintf("http://%s.%s.svc.cluster.local:18800", p.Name, ns)
+			b.WriteString(fmt.Sprintf("**%s:**\n```bash\nnode /home/node/.openclaw/workspace/plugins/a2a-gateway/skill/scripts/a2a-send.mjs --peer-url %s --token \"$%s\" --non-blocking --wait --message \"your message\"\n```\n\n", p.Name, peerURL, envVar))
+		}
+
+		b.WriteString("### Tips\n\n")
+		b.WriteString("- Use `--non-blocking --wait` for reliable responses\n")
+		b.WriteString("- The peer token is already in your environment as `$PEER_<NAME>_TOKEN`\n")
+		b.WriteString("- You can ask peers questions, delegate tasks, or coordinate work\n")
+		b.WriteString("- Each peer has their own personality and expertise — check their Agent Card\n")
+	}
+
+	return b.String()
 }
 
 // SetupWithManager sets up the controller with the Manager.
