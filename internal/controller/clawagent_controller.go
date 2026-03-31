@@ -332,15 +332,23 @@ func (r *ClawAgentReconciler) ensurePVC(ctx context.Context, owner *clawv1.ClawA
 		pvc.Spec.StorageClassName = owner.Spec.Workspace.StorageClassName
 	}
 
-	if err := ctrl.SetControllerReference(owner, pvc, r.Scheme); err != nil {
-		return fmt.Errorf("setting owner reference on PVC: %w", err)
+	// Only set owner reference when reclaimPolicy=delete. When retain (default),
+	// the PVC lives independently so it survives agent CR deletion.
+	reclaimPolicy := owner.Spec.Workspace.ReclaimPolicy
+	if reclaimPolicy == "" {
+		reclaimPolicy = "retain"
+	}
+	if reclaimPolicy == "delete" {
+		if err := ctrl.SetControllerReference(owner, pvc, r.Scheme); err != nil {
+			return fmt.Errorf("setting owner reference on PVC: %w", err)
+		}
 	}
 
 	key := types.NamespacedName{Name: pvcName, Namespace: ns}
 	existing := &corev1.PersistentVolumeClaim{}
 	if err := r.Get(ctx, key, existing); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("creating PVC for persistent workspace", "pvc", pvcName)
+			log.Info("creating PVC for persistent workspace", "pvc", pvcName, "reclaimPolicy", reclaimPolicy)
 			return r.Create(ctx, pvc)
 		}
 		return err
