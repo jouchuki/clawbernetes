@@ -54,6 +54,11 @@ spec:
                 items:
                   type: string
                 type: array
+              credentialsSecret:
+                description: |-
+                  credentialsSecret names a Kubernetes Secret containing integration credentials
+                  (e.g. telegram tokens). Mounted read-only at /home/node/.openclaw/credentials/.
+                type: string
               gateway:
                 description: gateway references the ClawGateway resource name for
                   LLM routing.
@@ -177,6 +182,28 @@ spec:
                       in spans.
                     type: boolean
                 type: object
+              workspace:
+                description: workspace controls storage for the agent's .openclaw
+                  home directory.
+                properties:
+                  mode:
+                    default: ephemeral
+                    description: mode selects ephemeral (emptyDir) or persistent (PVC)
+                      storage.
+                    enum:
+                    - ephemeral
+                    - persistent
+                    type: string
+                  storageClassName:
+                    description: storageClassName overrides the default StorageClass
+                      for the PVC.
+                    type: string
+                  storageSize:
+                    description: |-
+                      storageSize is the PVC size when mode=persistent (e.g. "10Gi").
+                      Ignored when mode=ephemeral.
+                    type: string
+                type: object
             type: object
           status:
             description: status defines the observed state of ClawAgent
@@ -248,6 +275,10 @@ spec:
                 type: string
               podName:
                 description: podName is the name of the Pod running this agent.
+                type: string
+              workspacePVC:
+                description: workspacePVC is the name of the PVC backing the agent's
+                  home directory (if persistent).
                 type: string
             type: object
         required:

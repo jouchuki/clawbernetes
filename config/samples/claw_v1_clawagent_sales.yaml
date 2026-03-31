@@ -39,3 +39,5 @@ spec:
     restartPolicy: Always
     hibernateAfterIdleMinutes: 15
     maxRuntime: "8h"
+  workspace:
+    mode: ephemeral

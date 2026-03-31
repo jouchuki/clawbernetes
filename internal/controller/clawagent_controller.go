@@ -26,6 +26,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -52,6 +53,7 @@ type ClawAgentReconciler struct {
 // +kubebuilder:rbac:groups=claw.clawbernetes.io,resources=clawskillsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=claw.clawbernetes.io,resources=clawpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups=claw.clawbernetes.io,resources=clawgateways,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
@@ -155,6 +157,13 @@ func (r *ClawAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	// --- Persistent workspace PVC (if configured) ---
+	if agent.Spec.Workspace.Mode == "persistent" {
+		if err := r.ensurePVC(ctx, agent, ns, name); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// --- Agent Deployment ---
 	dep := r.agentDeployment(agent, ns, name, otlpEndpoint, gatewayURL, skills)
 	if err := r.ensureResource(ctx, agent, dep, "agent-deployment"); err != nil {
@@ -171,6 +180,11 @@ func (r *ClawAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	phase, podName := r.resolveAgentStatus(ctx, ns, name)
 	agent.Status.Phase = phase
 	agent.Status.PodName = podName
+	if agent.Spec.Workspace.Mode == "persistent" {
+		agent.Status.WorkspacePVC = name + "-home"
+	} else {
+		agent.Status.WorkspacePVC = ""
+	}
 	if err := r.Status().Update(ctx, agent); err != nil {
 		log.Error(err, "unable to update ClawAgent status")
 		return ctrl.Result{}, err
@@ -283,6 +297,51 @@ func (r *ClawAgentReconciler) ensureResource(ctx context.Context, owner *clawv1.
 		if apierrors.IsNotFound(err) {
 			log.Info("creating resource", "kind", desc, "name", key.Name)
 			return r.Create(ctx, obj)
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *ClawAgentReconciler) ensurePVC(ctx context.Context, owner *clawv1.ClawAgent, ns, name string) error {
+	log := logf.FromContext(ctx)
+	pvcName := name + "-home"
+
+	storageSize := owner.Spec.Workspace.StorageSize
+	if storageSize == "" {
+		storageSize = "5Gi"
+	}
+
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pvcName,
+			Namespace: ns,
+			Labels:    agentLabels(name),
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(storageSize),
+				},
+			},
+		},
+	}
+
+	if owner.Spec.Workspace.StorageClassName != nil {
+		pvc.Spec.StorageClassName = owner.Spec.Workspace.StorageClassName
+	}
+
+	if err := ctrl.SetControllerReference(owner, pvc, r.Scheme); err != nil {
+		return fmt.Errorf("setting owner reference on PVC: %w", err)
+	}
+
+	key := types.NamespacedName{Name: pvcName, Namespace: ns}
+	existing := &corev1.PersistentVolumeClaim{}
+	if err := r.Get(ctx, key, existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("creating PVC for persistent workspace", "pvc", pvcName)
+			return r.Create(ctx, pvc)
 		}
 		return err
 	}
@@ -418,14 +477,6 @@ func (r *ClawAgentReconciler) agentDeployment(agent *clawv1.ClawAgent, ns, name,
 		Image:           openclawImage,
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Env:             env,
-		EnvFrom: []corev1.EnvFromSource{
-			{
-				SecretRef: &corev1.SecretEnvSource{
-					LocalObjectReference: corev1.LocalObjectReference{Name: "openclaw-api-keys"},
-					Optional:             boolPtr(true),
-				},
-			},
-		},
 		Ports: []corev1.ContainerPort{
 			{Name: "gateway", ContainerPort: int32(openclawGatewayPort), Protocol: corev1.ProtocolTCP},
 		},
@@ -464,12 +515,7 @@ func (r *ClawAgentReconciler) agentDeployment(agent *clawv1.ClawAgent, ns, name,
 
 	// --- Volumes ---
 	volumes := []corev1.Volume{
-		{
-			Name: "openclaw-home",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{},
-			},
-		},
+		openclawHomeVolume(name, agent.Spec.Workspace.Mode),
 		{
 			Name: "config-src",
 			VolumeSource: corev1.VolumeSource{
@@ -495,6 +541,26 @@ func (r *ClawAgentReconciler) agentDeployment(agent *clawv1.ClawAgent, ns, name,
 				},
 			},
 		},
+	}
+
+	// Mount integration credentials as a read-only secret volume.
+	if agent.Spec.CredentialsSecret != "" {
+		credMode := int32(0400)
+		volumes = append(volumes, corev1.Volume{
+			Name: "credentials-secret",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  agent.Spec.CredentialsSecret,
+					DefaultMode: &credMode,
+					Optional:    boolPtr(true),
+				},
+			},
+		})
+		mainContainer.VolumeMounts = append(mainContainer.VolumeMounts, corev1.VolumeMount{
+			Name:      "credentials-secret",
+			MountPath: "/home/node/.openclaw/credentials",
+			ReadOnly:  true,
+		})
 	}
 
 	// --- RestartPolicy ---
@@ -563,6 +629,25 @@ func agentLabels(name string) map[string]string {
 		"app":                          name,
 		"clawbernetes.io/agent":        name,
 		"app.kubernetes.io/managed-by": "clawbernetes",
+	}
+}
+
+func openclawHomeVolume(name, mode string) corev1.Volume {
+	if mode == "persistent" {
+		return corev1.Volume{
+			Name: "openclaw-home",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: name + "-home",
+				},
+			},
+		}
+	}
+	return corev1.Volume{
+		Name: "openclaw-home",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
 	}
 }
 
@@ -639,14 +724,14 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 	// --- diagnostics-otel: built-in extension in the orq-ai/openclaw fork ---
 	if otlpEndpoint != "" {
 		otelCfg := map[string]any{
-			"enabled":    true,
-			"endpoint":   otlpEndpoint,
-			"protocol":   "http/protobuf",
+			"enabled":     true,
+			"endpoint":    otlpEndpoint,
+			"protocol":    "http/protobuf",
 			"serviceName": name,
-			"traces":     true,
-			"metrics":    true,
-			"logs":       true,
-			"sampleRate": 1.0,
+			"traces":      true,
+			"metrics":     true,
+			"logs":        true,
+			"sampleRate":  1.0,
 		}
 
 		// Wire TelemetryCaptureSpec — default everything on, let spec override.
@@ -687,7 +772,7 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 				"gateway-anthropic": map[string]any{
 					"baseUrl": gatewayURL,
 					"api":     "anthropic-messages",
-					"apiKey":  "${ANTHROPIC_API_KEY}",
+					"apiKey":  "gateway-managed", // sentinel — gateway injects the real key server-side
 					"models": []map[string]any{
 						{
 							"id":            "claude-sonnet-4-6",
@@ -712,7 +797,7 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 	}
 
 	// --- Build observeclaw plugin config from ClawPolicy + ClawGateway ---
-	observeclawCfg := r.buildObserveclawConfig(name, gatewayURL, policy, gateway)
+	observeclawCfg := r.buildObserveclawConfig(agent, name, gatewayURL, policy, gateway)
 
 	pluginEntries := map[string]any{
 		"observeclaw": map[string]any{
@@ -740,7 +825,7 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 // buildObserveclawConfig maps ClawPolicy + ClawGateway CRD fields to the
 // observeclaw plugin configSchema (see openclaw.plugin.json in
 // github.com/ai-trust-layer/observeclaw).
-func (r *ClawAgentReconciler) buildObserveclawConfig(agentName, gatewayURL string, policy *clawv1.ClawPolicy, gateway *clawv1.ClawGateway) map[string]any {
+func (r *ClawAgentReconciler) buildObserveclawConfig(agent *clawv1.ClawAgent, agentName, gatewayURL string, policy *clawv1.ClawPolicy, gateway *clawv1.ClawGateway) map[string]any {
 	cfg := map[string]any{
 		"enabled":  true,
 		"currency": "USD",
@@ -797,6 +882,22 @@ func (r *ClawAgentReconciler) buildObserveclawConfig(agentName, gatewayURL strin
 			toolDefaults["deny"] = tp.Deny
 		}
 	}
+	// Auto-deny credential file access to prevent the LLM from
+	// exfiltrating mounted integration secrets via file tools.
+	if agent.Spec.CredentialsSecret != "" {
+		denyList, _ := toolDefaults["deny"].([]string)
+		denyList = append(denyList,
+			"/home/node/.openclaw/credentials/*",
+			"cat.*credentials",
+			"grep.*credentials",
+			"head.*credentials",
+			"tail.*credentials",
+			"less.*credentials",
+			"base64.*credentials",
+		)
+		toolDefaults["deny"] = denyList
+	}
+
 	cfg["toolPolicy"] = map[string]any{
 		"defaults": toolDefaults,
 		"agents":   map[string]any{},

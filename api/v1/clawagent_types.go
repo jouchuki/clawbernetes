@@ -116,6 +116,24 @@ type AgentLifecycleSpec struct {
 	MaxRuntime string `json:"maxRuntime,omitempty"`
 }
 
+// WorkspaceSpec controls storage for the agent's .openclaw home directory.
+type WorkspaceSpec struct {
+	// mode selects ephemeral (emptyDir) or persistent (PVC) storage.
+	// +optional
+	// +kubebuilder:default=ephemeral
+	// +kubebuilder:validation:Enum=ephemeral;persistent
+	Mode string `json:"mode,omitempty"`
+
+	// storageSize is the PVC size when mode=persistent (e.g. "10Gi").
+	// Ignored when mode=ephemeral.
+	// +optional
+	StorageSize string `json:"storageSize,omitempty"`
+
+	// storageClassName overrides the default StorageClass for the PVC.
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+}
+
 // ClawAgentSpec defines the desired state of ClawAgent.
 type ClawAgentSpec struct {
 	// identity defines the agent's soul, user context, and self-concept.
@@ -157,6 +175,15 @@ type ClawAgentSpec struct {
 	// lifecycle defines lifecycle management for the agent.
 	// +optional
 	Lifecycle AgentLifecycleSpec `json:"lifecycle,omitempty"`
+
+	// workspace controls storage for the agent's .openclaw home directory.
+	// +optional
+	Workspace WorkspaceSpec `json:"workspace,omitempty"`
+
+	// credentialsSecret names a Kubernetes Secret containing integration credentials
+	// (e.g. telegram tokens). Mounted read-only at /home/node/.openclaw/credentials/.
+	// +optional
+	CredentialsSecret string `json:"credentialsSecret,omitempty"`
 }
 
 // ClawAgentStatus defines the observed state of ClawAgent.
@@ -174,6 +201,10 @@ type ClawAgentStatus struct {
 	// podName is the name of the Pod running this agent.
 	// +optional
 	PodName string `json:"podName,omitempty"`
+
+	// workspacePVC is the name of the PVC backing the agent's home directory (if persistent).
+	// +optional
+	WorkspacePVC string `json:"workspacePVC,omitempty"`
 }
 
 // +kubebuilder:object:root=true

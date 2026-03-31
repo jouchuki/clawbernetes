@@ -43,3 +43,7 @@ spec:
     restartPolicy: Always
     hibernateAfterIdleMinutes: 30
     maxRuntime: "24h"
+  workspace:
+    mode: persistent
+    storageSize: "10Gi"
+  credentialsSecret: eng-agent-credentials

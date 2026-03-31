@@ -390,8 +390,8 @@ Endpoints:
   POST /config/patterns      — Push PII patterns from plugin config
   GET  /health               — Health check
 
-The proxy forwards auth headers from the incoming request — no API key needed
-on the server. Configure the real key in the openclaw provider config.
+The proxy reads the API key from the ANTHROPIC_API_KEY environment variable
+and injects it server-side. Agents never see or send the key.
 """
 import argparse
 import os
@@ -487,7 +487,10 @@ def redact_messages(messages: list[dict]) -> tuple[list[dict], list[dict]]:
     return cleaned, all_redactions
 
 
-_FORWARD_HEADERS = ("x-api-key", "anthropic-version", "authorization", "anthropic-beta")
+_FORWARD_HEADERS = ("anthropic-version", "authorization", "anthropic-beta")
+
+# Server-side API key injection -- the agent never sees or sends the key.
+_SERVER_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 
 @app.api_route("/v1/messages", methods=["POST"])
@@ -504,6 +507,8 @@ async def proxy_messages(request: Request):
             print(f"  {r['original']} -> {r['replacement']}")
 
     headers = {"Content-Type": "application/json"}
+    if _SERVER_API_KEY:
+        headers["x-api-key"] = _SERVER_API_KEY
     for key in _FORWARD_HEADERS:
         val = request.headers.get(key)
         if val:
