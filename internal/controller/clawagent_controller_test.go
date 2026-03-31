@@ -131,7 +131,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 			agent := &clawv1.ClawAgent{
 				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
 				Spec: clawv1.ClawAgentSpec{
-					Workspace: clawv1.WorkspaceSpec{Mode: "ephemeral"},
+					Workspace: clawv1.WorkspaceSpec{Mode: clawv1.WorkspaceModeEphemeral},
 				},
 			}
 			Expect(k8sClient.Create(ctx, agent)).To(Succeed())
@@ -152,7 +152,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 
 		It("should NOT create a PVC", func() {
 			pvc := &corev1.PersistentVolumeClaim{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: agentName + "-home", Namespace: ns}, pvc)
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns}, pvc)
 			Expect(errors.IsNotFound(err)).To(BeTrue(), "PVC should not exist for ephemeral workspace")
 		})
 
@@ -174,7 +174,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
 				Spec: clawv1.ClawAgentSpec{
 					Workspace: clawv1.WorkspaceSpec{
-						Mode:        "persistent",
+						Mode:        clawv1.WorkspaceModePersistent,
 						StorageSize: "8Gi",
 					},
 				},
@@ -185,12 +185,12 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 
 		AfterEach(func() {
 			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: agentName, Namespace: ns})
-			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: agentName + "-home", Namespace: ns})
+			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns})
 		})
 
 		It("should create a PVC with the correct size", func() {
 			pvc := &corev1.PersistentVolumeClaim{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName + "-home", Namespace: ns}, pvc)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns}, pvc)).To(Succeed())
 
 			storageReq := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
 			Expect(storageReq.String()).To(Equal("8Gi"))
@@ -202,7 +202,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 			vol := findVolume(dep, "openclaw-home")
 			Expect(vol).NotTo(BeNil())
 			Expect(vol.VolumeSource.PersistentVolumeClaim).NotTo(BeNil(), "expected PVC volume source")
-			Expect(vol.VolumeSource.PersistentVolumeClaim.ClaimName).To(Equal(agentName + "-home"))
+			Expect(vol.VolumeSource.PersistentVolumeClaim.ClaimName).To(Equal(agentName + clawv1.PVCSuffix))
 			Expect(vol.VolumeSource.EmptyDir).To(BeNil(), "should NOT have emptyDir")
 		})
 
@@ -219,19 +219,19 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 			reconcileAgent(name2)
 
 			pvc := &corev1.PersistentVolumeClaim{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name2 + "-home", Namespace: ns}, pvc)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name2 + clawv1.PVCSuffix, Namespace: ns}, pvc)).To(Succeed())
 			storageReq := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
 			Expect(storageReq.String()).To(Equal("5Gi"))
 
 			// Cleanup
 			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: name2, Namespace: ns})
-			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: name2 + "-home", Namespace: ns})
+			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: name2 + clawv1.PVCSuffix, Namespace: ns})
 		})
 
 		It("should set WorkspacePVC in status", func() {
 			agent := &clawv1.ClawAgent{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName, Namespace: ns}, agent)).To(Succeed())
-			Expect(agent.Status.WorkspacePVC).To(Equal(agentName + "-home"))
+			Expect(agent.Status.WorkspacePVC).To(Equal(agentName + clawv1.PVCSuffix))
 		})
 	})
 
@@ -246,7 +246,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
 				Spec: clawv1.ClawAgentSpec{
 					Workspace: clawv1.WorkspaceSpec{
-						Mode:        "persistent",
+						Mode:        clawv1.WorkspaceModePersistent,
 						StorageSize: "1Gi",
 					},
 				},
@@ -257,12 +257,12 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 
 		AfterEach(func() {
 			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: agentName, Namespace: ns})
-			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: agentName + "-home", Namespace: ns})
+			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns})
 		})
 
 		It("should create PVC without owner reference", func() {
 			pvc := &corev1.PersistentVolumeClaim{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName + "-home", Namespace: ns}, pvc)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns}, pvc)).To(Succeed())
 			Expect(pvc.OwnerReferences).To(BeEmpty(), "retain PVC must have no owner references")
 		})
 	})
@@ -278,9 +278,9 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
 				Spec: clawv1.ClawAgentSpec{
 					Workspace: clawv1.WorkspaceSpec{
-						Mode:          "persistent",
+						Mode:          clawv1.WorkspaceModePersistent,
 						StorageSize:   "1Gi",
-						ReclaimPolicy: "delete",
+						ReclaimPolicy: clawv1.ReclaimPolicyDelete,
 					},
 				},
 			}
@@ -290,12 +290,12 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 
 		AfterEach(func() {
 			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: agentName, Namespace: ns})
-			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: agentName + "-home", Namespace: ns})
+			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns})
 		})
 
 		It("should create PVC with owner reference pointing to the agent", func() {
 			pvc := &corev1.PersistentVolumeClaim{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName + "-home", Namespace: ns}, pvc)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns}, pvc)).To(Succeed())
 			Expect(pvc.OwnerReferences).NotTo(BeEmpty(), "delete PVC must have owner reference")
 			Expect(pvc.OwnerReferences[0].Name).To(Equal(agentName))
 		})
@@ -457,7 +457,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
 				Spec: clawv1.ClawAgentSpec{
 					Workspace: clawv1.WorkspaceSpec{
-						Mode:        "persistent",
+						Mode:        clawv1.WorkspaceModePersistent,
 						StorageSize: "20Gi",
 					},
 					CredentialsSecret: secretName,
@@ -469,7 +469,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 
 		AfterEach(func() {
 			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: agentName, Namespace: ns})
-			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: agentName + "-home", Namespace: ns})
+			deleteIfExists(&corev1.PersistentVolumeClaim{}, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns})
 		})
 
 		It("should have both PVC volume and credentials secret volume", func() {
@@ -479,7 +479,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 			homeVol := findVolume(dep, "openclaw-home")
 			Expect(homeVol).NotTo(BeNil())
 			Expect(homeVol.VolumeSource.PersistentVolumeClaim).NotTo(BeNil())
-			Expect(homeVol.VolumeSource.PersistentVolumeClaim.ClaimName).To(Equal(agentName + "-home"))
+			Expect(homeVol.VolumeSource.PersistentVolumeClaim.ClaimName).To(Equal(agentName + clawv1.PVCSuffix))
 
 			// Credentials volume
 			credVol := findVolume(dep, "credentials-secret")
@@ -489,7 +489,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 
 		It("should have PVC with 20Gi", func() {
 			pvc := &corev1.PersistentVolumeClaim{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName + "-home", Namespace: ns}, pvc)).To(Succeed())
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: agentName + clawv1.PVCSuffix, Namespace: ns}, pvc)).To(Succeed())
 			storageReq := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
 			Expect(storageReq.String()).To(Equal("20Gi"))
 		})

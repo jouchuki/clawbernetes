@@ -116,6 +116,27 @@ type AgentLifecycleSpec struct {
 	MaxRuntime string `json:"maxRuntime,omitempty"`
 }
 
+// Workspace mode constants.
+const (
+	WorkspaceModeEphemeral  = "ephemeral"
+	WorkspaceModePersistent = "persistent"
+)
+
+// Reclaim policy constants.
+const (
+	ReclaimPolicyRetain = "retain"
+	ReclaimPolicyDelete = "delete"
+)
+
+// Default storage size for persistent workspaces.
+const DefaultWorkspaceStorageSize = "5Gi"
+
+// PVC naming constants.
+const (
+	PVCSuffix       = "-home"
+	PVCResizeSuffix = "-home-v2"
+)
+
 // WorkspaceSpec controls storage for the agent's .openclaw home directory.
 type WorkspaceSpec struct {
 	// mode selects ephemeral (emptyDir) or persistent (PVC) storage.
@@ -142,6 +163,27 @@ type WorkspaceSpec struct {
 	// +kubebuilder:default=retain
 	// +kubebuilder:validation:Enum=retain;delete
 	ReclaimPolicy string `json:"reclaimPolicy,omitempty"`
+}
+
+// IsPersistent returns true if the workspace mode is persistent.
+func (w WorkspaceSpec) IsPersistent() bool {
+	return w.Mode == WorkspaceModePersistent
+}
+
+// ResolvedReclaimPolicy returns the effective reclaim policy, defaulting to retain.
+func (w WorkspaceSpec) ResolvedReclaimPolicy() string {
+	if w.ReclaimPolicy == "" {
+		return ReclaimPolicyRetain
+	}
+	return w.ReclaimPolicy
+}
+
+// ResolvedStorageSize returns the effective storage size, defaulting to 5Gi.
+func (w WorkspaceSpec) ResolvedStorageSize() string {
+	if w.StorageSize == "" {
+		return DefaultWorkspaceStorageSize
+	}
+	return w.StorageSize
 }
 
 // ClawAgentSpec defines the desired state of ClawAgent.
