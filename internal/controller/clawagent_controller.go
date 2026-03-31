@@ -797,6 +797,17 @@ func (r *ClawAgentReconciler) agentDeployment(p deploymentParams) *appsv1.Deploy
 		})
 	}
 
+	// Inject model provider API key when using direct providers (no gateway).
+	// The key comes from openclaw-api-keys secret via ${PROVIDER_API_KEY} env var.
+	if agent.Spec.Model.Provider != "" && p.GatewayURL == "" {
+		mainContainer.EnvFrom = append(mainContainer.EnvFrom, corev1.EnvFromSource{
+			SecretRef: &corev1.SecretEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "openclaw-api-keys"},
+				Optional:             boolPtr(true),
+			},
+		})
+	}
+
 	// Inject channel credential secrets as env vars for ${VAR} substitution in openclaw.json.
 	for _, ch := range p.Channels {
 		if ch.Spec.CredentialsSecret != "" {
@@ -954,6 +965,10 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 		},
 		"agents": map[string]any{
 			"defaults": map[string]any{
+				"model": map[string]any{
+					"primary": fmt.Sprintf("%s/%s", agent.Spec.Model.Provider, agent.Spec.Model.Name),
+				},
+				"workspace": "/home/node/.openclaw/workspace",
 				"heartbeat": map[string]any{
 					"every":           "5m",
 					"lightContext":    true,
@@ -1011,35 +1026,57 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 		}
 	}
 
-	// --- Register a gateway-proxied Anthropic provider ---
+	// --- Register model providers ---
+	providers := map[string]any{}
+
+	// Register a gateway-proxied Anthropic provider if gateway is configured.
 	if gatewayURL != "" {
-		cfg["models"] = map[string]any{
-			"providers": map[string]any{
-				"gateway-anthropic": map[string]any{
-					"baseUrl": gatewayURL,
-					"api":     "anthropic-messages",
-					"apiKey":  "gateway-managed", // sentinel — gateway injects the real key server-side
-					"models": []map[string]any{
-						{
-							"id":            "claude-sonnet-4-6",
-							"name":          "Claude Sonnet 4.6 (via gateway)",
-							"reasoning":     true,
-							"input":         []string{"text"},
-							"contextWindow": 200000,
-							"maxTokens":     16384,
-						},
-						{
-							"id":            "claude-haiku-4-5",
-							"name":          "Claude Haiku 4.5 (via gateway)",
-							"reasoning":     false,
-							"input":         []string{"text"},
-							"contextWindow": 200000,
-							"maxTokens":     8192,
-						},
-					},
+		providers["gateway-anthropic"] = map[string]any{
+			"baseUrl": gatewayURL,
+			"api":     "anthropic-messages",
+			"apiKey":  "gateway-managed", // sentinel — gateway injects the real key server-side
+			"models": []map[string]any{
+				{
+					"id":            "claude-sonnet-4-6",
+					"name":          "Claude Sonnet 4.6 (via gateway)",
+					"reasoning":     true,
+					"input":         []string{"text"},
+					"contextWindow": 200000,
+					"maxTokens":     16384,
+				},
+				{
+					"id":            "claude-haiku-4-5",
+					"name":          "Claude Haiku 4.5 (via gateway)",
+					"reasoning":     false,
+					"input":         []string{"text"},
+					"contextWindow": 200000,
+					"maxTokens":     8192,
 				},
 			},
 		}
+	}
+
+	// Register direct providers based on agent model spec.
+	// Uses ${<PROVIDER_UPPER>_API_KEY} env var for credentials.
+	if agent.Spec.Model.Provider != "" {
+		providerName := agent.Spec.Model.Provider
+		apiFormat := "openai-responses"
+		baseURL := "https://api.openai.com/v1"
+		if providerName == "anthropic" {
+			apiFormat = "anthropic-messages"
+			baseURL = "https://api.anthropic.com"
+		}
+		envVar := fmt.Sprintf("${%s_API_KEY}", strings.ToUpper(strings.ReplaceAll(providerName, "-", "_")))
+		providers[providerName] = map[string]any{
+			"baseUrl": baseURL,
+			"api":     apiFormat,
+			"apiKey":  envVar,
+			"models":  []map[string]any{},
+		}
+	}
+
+	if len(providers) > 0 {
+		cfg["models"] = map[string]any{"providers": providers}
 	}
 
 	// --- Channels: generate channels config from ClawChannel CRs ---
