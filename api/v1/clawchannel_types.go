@@ -30,6 +30,36 @@ const (
 	ChannelTypeMSTeams  = "msteams"
 )
 
+// ChannelsBotToken maps channel types that use a botToken credential.
+var ChannelsWithBotToken = map[string]bool{
+	ChannelTypeTelegram: true,
+	ChannelTypeSlack:    true,
+	ChannelTypeDiscord:  true,
+	ChannelTypeMSTeams:  true,
+}
+
+// ChannelsWithAppToken maps channel types that also require an appToken.
+var ChannelsWithAppToken = map[string]bool{
+	ChannelTypeSlack: true,
+}
+
+// ProviderAPIFormats maps known provider names to their OpenClaw API format string.
+var ProviderAPIFormats = map[string]string{
+	"anthropic": "anthropic-messages",
+	"openai":    "openai-responses",
+	"google":    "google-genai",
+}
+
+// ProviderBaseURLs maps known provider names to their default base URL.
+var ProviderBaseURLs = map[string]string{
+	"anthropic": "https://api.anthropic.com",
+	"openai":    "https://api.openai.com/v1",
+	"google":    "https://generativelanguage.googleapis.com/v1beta",
+}
+
+// DefaultProviderAPIKeysSecret is the conventional secret name for LLM provider API keys.
+const DefaultProviderAPIKeysSecret = "openclaw-api-keys"
+
 // ClawChannelSpec defines the desired state of ClawChannel.
 type ClawChannelSpec struct {
 	// type is the delivery channel type (telegram, slack, discord, etc.).

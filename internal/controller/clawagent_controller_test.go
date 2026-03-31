@@ -568,4 +568,156 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 			Expect(apiKey).To(Equal("gateway-managed"), "apiKey must be the sentinel value, not a real key")
 		})
 	})
+
+	// -----------------------------------------------------------------------
+	// Test: Channel resolution and config generation
+	// -----------------------------------------------------------------------
+	Context("with ClawChannel referenced", func() {
+		const agentName = "test-channel-agent"
+		const channelName = "test-telegram"
+
+		BeforeEach(func() {
+			enabled := true
+			channel := &clawv1.ClawChannel{
+				ObjectMeta: metav1.ObjectMeta{Name: channelName, Namespace: ns},
+				Spec: clawv1.ClawChannelSpec{
+					Type:              clawv1.ChannelTypeTelegram,
+					Enabled:           &enabled,
+					CredentialsSecret: "tg-creds",
+					Config: map[string]string{
+						"dmPolicy":    "pairing",
+						"groupPolicy": "allowlist",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, channel)).To(Succeed())
+
+			agent := &clawv1.ClawAgent{
+				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
+				Spec: clawv1.ClawAgentSpec{
+					Channels: []string{channelName},
+					Model: clawv1.AgentModelSpec{
+						Provider: "openai",
+						Name:     "gpt-4.1",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, agent)).To(Succeed())
+			reconcileAgent(agentName)
+		})
+
+		AfterEach(func() {
+			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: agentName, Namespace: ns})
+			deleteIfExists(&clawv1.ClawChannel{}, types.NamespacedName{Name: channelName, Namespace: ns})
+		})
+
+		It("should generate channels config in openclaw.json with ${VAR} placeholders", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			openclawJSON := cm.Data["openclaw.json"]
+
+			var cfg map[string]any
+			Expect(json.Unmarshal([]byte(openclawJSON), &cfg)).To(Succeed())
+
+			channels, ok := cfg["channels"].(map[string]any)
+			Expect(ok).To(BeTrue(), "channels section must exist")
+			tg, ok := channels["telegram"].(map[string]any)
+			Expect(ok).To(BeTrue(), "telegram channel must exist")
+			Expect(tg["enabled"]).To(Equal(true))
+			Expect(tg["botToken"]).To(Equal("${TELEGRAM_BOT_TOKEN}"))
+			Expect(tg["dmPolicy"]).To(Equal("pairing"))
+			Expect(tg["groupPolicy"]).To(Equal("allowlist"))
+		})
+
+		It("should auto-enable the telegram plugin", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			var cfg map[string]any
+			Expect(json.Unmarshal([]byte(cm.Data["openclaw.json"]), &cfg)).To(Succeed())
+
+			plugins := cfg["plugins"].(map[string]any)["entries"].(map[string]any)
+			tgPlugin, ok := plugins["telegram"].(map[string]any)
+			Expect(ok).To(BeTrue(), "telegram plugin must be auto-enabled")
+			Expect(tgPlugin["enabled"]).To(Equal(true))
+		})
+
+		It("should inject channel credential secret as EnvFrom", func() {
+			dep := getDeployment(agentName)
+			mc := mainContainer(dep)
+			found := false
+			for _, ef := range mc.EnvFrom {
+				if ef.SecretRef != nil && ef.SecretRef.Name == "tg-creds" {
+					found = true
+					break
+				}
+			}
+			Expect(found).To(BeTrue(), "tg-creds secret must be injected as EnvFrom")
+		})
+
+		It("should not have raw tokens in the ConfigMap", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			// The ConfigMap should only have ${VAR} placeholders, never real values
+			Expect(cm.Data["openclaw.json"]).NotTo(MatchRegexp(`\d{10}:`))
+		})
+
+		It("should set agents.defaults.model.primary from spec", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			var cfg map[string]any
+			Expect(json.Unmarshal([]byte(cm.Data["openclaw.json"]), &cfg)).To(Succeed())
+
+			defaults := cfg["agents"].(map[string]any)["defaults"].(map[string]any)
+			model := defaults["model"].(map[string]any)
+			Expect(model["primary"]).To(Equal("openai/gpt-4.1"))
+		})
+
+		It("should register the openai provider with ${OPENAI_API_KEY}", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			var cfg map[string]any
+			Expect(json.Unmarshal([]byte(cm.Data["openclaw.json"]), &cfg)).To(Succeed())
+
+			providers := cfg["models"].(map[string]any)["providers"].(map[string]any)
+			openai, ok := providers["openai"].(map[string]any)
+			Expect(ok).To(BeTrue(), "openai provider must be registered")
+			Expect(openai["apiKey"]).To(Equal("${OPENAI_API_KEY}"))
+			Expect(openai["api"]).To(Equal("openai-responses"))
+		})
+	})
+
+	// -----------------------------------------------------------------------
+	// Test: No model specified — no panic, no model section
+	// -----------------------------------------------------------------------
+	Context("with no model specified", func() {
+		const agentName = "test-no-model"
+
+		BeforeEach(func() {
+			agent := &clawv1.ClawAgent{
+				ObjectMeta: metav1.ObjectMeta{Name: agentName, Namespace: ns},
+				Spec:       clawv1.ClawAgentSpec{},
+			}
+			Expect(k8sClient.Create(ctx, agent)).To(Succeed())
+			reconcileAgent(agentName)
+		})
+
+		AfterEach(func() {
+			deleteIfExists(&clawv1.ClawAgent{}, types.NamespacedName{Name: agentName, Namespace: ns})
+		})
+
+		It("should not set model.primary in agents.defaults", func() {
+			cm := getConfigMap(agentName + "-openclaw-config")
+			var cfg map[string]any
+			Expect(json.Unmarshal([]byte(cm.Data["openclaw.json"]), &cfg)).To(Succeed())
+
+			defaults := cfg["agents"].(map[string]any)["defaults"].(map[string]any)
+			_, hasModel := defaults["model"]
+			Expect(hasModel).To(BeFalse(), "no model section when provider is empty")
+		})
+
+		It("should not inject openclaw-api-keys EnvFrom", func() {
+			dep := getDeployment(agentName)
+			mc := mainContainer(dep)
+			for _, ef := range mc.EnvFrom {
+				if ef.SecretRef != nil {
+					Expect(ef.SecretRef.Name).NotTo(Equal(clawv1.DefaultProviderAPIKeysSecret))
+				}
+			}
+		})
+	})
 })

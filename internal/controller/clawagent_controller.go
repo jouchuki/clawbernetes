@@ -797,27 +797,30 @@ func (r *ClawAgentReconciler) agentDeployment(p deploymentParams) *appsv1.Deploy
 		})
 	}
 
-	// Inject model provider API key when using direct providers (no gateway).
-	// The key comes from openclaw-api-keys secret via ${PROVIDER_API_KEY} env var.
-	if agent.Spec.Model.Provider != "" && p.GatewayURL == "" {
+	// Inject secrets as env vars for ${VAR} substitution in openclaw.json.
+	// Deduplicate to avoid mounting the same secret twice.
+	injectedSecrets := map[string]bool{}
+	injectSecret := func(name string) {
+		if name == "" || injectedSecrets[name] {
+			return
+		}
+		injectedSecrets[name] = true
 		mainContainer.EnvFrom = append(mainContainer.EnvFrom, corev1.EnvFromSource{
 			SecretRef: &corev1.SecretEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "openclaw-api-keys"},
+				LocalObjectReference: corev1.LocalObjectReference{Name: name},
 				Optional:             boolPtr(true),
 			},
 		})
 	}
 
-	// Inject channel credential secrets as env vars for ${VAR} substitution in openclaw.json.
+	// Model provider API key (direct providers only, no gateway).
+	if agent.Spec.Model.Provider != "" && p.GatewayURL == "" {
+		injectSecret(clawv1.DefaultProviderAPIKeysSecret)
+	}
+
+	// Channel credential secrets.
 	for _, ch := range p.Channels {
-		if ch.Spec.CredentialsSecret != "" {
-			mainContainer.EnvFrom = append(mainContainer.EnvFrom, corev1.EnvFromSource{
-				SecretRef: &corev1.SecretEnvSource{
-					LocalObjectReference: corev1.LocalObjectReference{Name: ch.Spec.CredentialsSecret},
-					Optional:             boolPtr(true),
-				},
-			})
-		}
+		injectSecret(ch.Spec.CredentialsSecret)
 	}
 
 	// --- RestartPolicy ---
@@ -965,9 +968,6 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 		},
 		"agents": map[string]any{
 			"defaults": map[string]any{
-				"model": map[string]any{
-					"primary": fmt.Sprintf("%s/%s", agent.Spec.Model.Provider, agent.Spec.Model.Name),
-				},
 				"workspace": "/home/node/.openclaw/workspace",
 				"heartbeat": map[string]any{
 					"every":           "5m",
@@ -980,6 +980,14 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 				{"id": name, "default": true},
 			},
 		},
+	}
+
+	// Set default model if provider and name are specified.
+	if agent.Spec.Model.Provider != "" && agent.Spec.Model.Name != "" {
+		defaults := cfg["agents"].(map[string]any)["defaults"].(map[string]any)
+		defaults["model"] = map[string]any{
+			"primary": fmt.Sprintf("%s/%s", agent.Spec.Model.Provider, agent.Spec.Model.Name),
+		}
 	}
 
 	// --- diagnostics-otel: built-in extension in the orq-ai/openclaw fork ---
@@ -1060,11 +1068,13 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 	// Uses ${<PROVIDER_UPPER>_API_KEY} env var for credentials.
 	if agent.Spec.Model.Provider != "" {
 		providerName := agent.Spec.Model.Provider
-		apiFormat := "openai-responses"
-		baseURL := "https://api.openai.com/v1"
-		if providerName == "anthropic" {
-			apiFormat = "anthropic-messages"
-			baseURL = "https://api.anthropic.com"
+		apiFormat := clawv1.ProviderAPIFormats[providerName]
+		if apiFormat == "" {
+			apiFormat = "openai-responses" // safe default for unknown providers
+		}
+		baseURL := clawv1.ProviderBaseURLs[providerName]
+		if baseURL == "" {
+			baseURL = "https://api.openai.com/v1"
 		}
 		envVar := fmt.Sprintf("${%s_API_KEY}", strings.ToUpper(strings.ReplaceAll(providerName, "-", "_")))
 		providers[providerName] = map[string]any{
@@ -1087,11 +1097,11 @@ func (r *ClawAgentReconciler) buildOpenclawConfig(agent *clawv1.ClawAgent, name,
 				"enabled": true,
 			}
 			// Map credential secret keys to ${ENV_VAR} placeholders.
-			// Convention: <TYPE_UPPER>_BOT_TOKEN, <TYPE_UPPER>_APP_TOKEN
 			chType := strings.ToUpper(ch.Spec.Type)
-			chCfg["botToken"] = fmt.Sprintf("${%s_BOT_TOKEN}", chType)
-			// Slack also needs appToken.
-			if ch.Spec.Type == clawv1.ChannelTypeSlack {
+			if clawv1.ChannelsWithBotToken[ch.Spec.Type] {
+				chCfg["botToken"] = fmt.Sprintf("${%s_BOT_TOKEN}", chType)
+			}
+			if clawv1.ChannelsWithAppToken[ch.Spec.Type] {
 				chCfg["appToken"] = fmt.Sprintf("${%s_APP_TOKEN}", chType)
 			}
 			// Merge user-provided config (dmPolicy, groupPolicy, streaming, etc.)
