@@ -664,9 +664,11 @@ func (r *ClawAgentReconciler) agentDeployment(p deploymentParams) *appsv1.Deploy
 		Name:            "copy-extensions",
 		Image:           openclawImage,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command: []string{"sh", "-c",
-			"cp -r /home/node/.openclaw/extensions /openclaw-home/extensions 2>/dev/null || true && echo 'extensions copied'",
-		},
+		Command: []string{"sh", "-c", strings.Join([]string{
+			"cp -r /home/node/.openclaw/extensions /openclaw-home/extensions 2>/dev/null || true",
+			"cp -r /home/node/.openclaw/workspace/plugins /openclaw-home/workspace-plugins 2>/dev/null || true",
+			"echo 'extensions and plugins copied'",
+		}, " && ")},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "openclaw-home", MountPath: "/openclaw-home"},
 		},
@@ -677,7 +679,8 @@ func (r *ClawAgentReconciler) agentDeployment(p deploymentParams) *appsv1.Deploy
 		Name:  "seed-workspace",
 		Image: "busybox:1.36",
 		Command: []string{"sh", "-c", strings.Join([]string{
-			"mkdir -p /openclaw-home/workspace/skills",
+			"mkdir -p /openclaw-home/workspace/skills /openclaw-home/workspace/plugins",
+			"cp -r /openclaw-home/workspace-plugins/* /openclaw-home/workspace/plugins/ 2>/dev/null || true",
 			"cp /config-src/openclaw.json /openclaw-home/openclaw.json",
 			"cp /config-src/HEARTBEAT.md /openclaw-home/workspace/HEARTBEAT.md",
 			"cp /identity-src/SOUL.md /openclaw-home/workspace/SOUL.md 2>/dev/null || true",
