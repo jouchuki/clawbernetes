@@ -36,6 +36,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	clawv1 "github.com/clawbernetes/operator/api/v1"
+	"net/http"
+
+	"github.com/clawbernetes/operator/internal/api"
 	"github.com/clawbernetes/operator/internal/controller"
 	// +kubebuilder:scaffold:imports
 )
@@ -210,8 +213,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start control plane API server in background.
+	signalCtx := ctrl.SetupSignalHandler()
+	apiServer := &api.Server{
+		Client:    mgr.GetClient(),
+		Namespace: "clawbernetes",
+		Port:      9090,
+	}
+	go func() {
+		if err := apiServer.Start(signalCtx); err != nil && err != http.ErrServerClosed {
+			setupLog.Error(err, "Control plane API server failed")
+		}
+	}()
+
 	setupLog.Info("Starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(signalCtx); err != nil {
 		setupLog.Error(err, "Failed to run manager")
 		os.Exit(1)
 	}

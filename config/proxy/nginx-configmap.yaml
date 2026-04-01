@@ -18,27 +18,13 @@ data:
         ''      close;
       }
 
+      # Dynamic agent routing: <agent-name>.local → agent service on port 18789
       server {
         listen 80;
-        server_name eng-agent.local;
+        server_name ~^(?<agent_name>.+)\.local$;
         location / {
-          set $upstream_eng http://eng-agent.clawbernetes.svc.cluster.local:18789;
-          proxy_pass $upstream_eng;
-          proxy_http_version 1.1;
-          proxy_set_header Upgrade $http_upgrade;
-          proxy_set_header Connection $connection_upgrade;
-          proxy_set_header Host $host;
-          proxy_set_header X-Real-IP $remote_addr;
-          proxy_read_timeout 300s;
-        }
-      }
-
-      server {
-        listen 80;
-        server_name sales-agent.local;
-        location / {
-          set $upstream_sales http://sales-agent.clawbernetes.svc.cluster.local:18789;
-          proxy_pass $upstream_sales;
+          set $upstream_agent http://${agent_name}.clawbernetes.svc.cluster.local:18789;
+          proxy_pass $upstream_agent;
           proxy_http_version 1.1;
           proxy_set_header Upgrade $http_upgrade;
           proxy_set_header Connection $connection_upgrade;

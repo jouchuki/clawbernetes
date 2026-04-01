@@ -6,5 +6,6 @@ resources:
 - claw_v1_clawgateway.yaml
 - claw_v1_clawpolicy.yaml
 - claw_v1_clawskillset.yaml
-- claw_v1_clawconnector.yaml
+- claw_v1_clawchannel_telegram.yaml
+- claw_v1_clawchannel_slack.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

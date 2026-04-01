@@ -238,54 +238,17 @@
     {
       "id": 6,
       "type": "table",
-      "title": "eng-agent Traces",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "title": "All Agent Traces",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
       "datasource": { "type": "tempo", "uid": "tempo" },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "tempo", "uid": "tempo" },
           "queryType": "traceql",
-          "query": "{resource.service.name = \"eng-agent\" && span.gen_ai.operation.name = \"chat\"}",
+          "query": "{span.gen_ai.operation.name = \"chat\"}",
           "tableType": "traces",
-          "limit": 20
-        }
-      ],
-      "options": {
-        "showHeader": true,
-        "cellHeight": "sm",
-        "sortBy": [{ "displayName": "Start time", "desc": true }]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
-        },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "traceDuration" },
-            "properties": [{ "id": "unit", "value": "ns" }, { "id": "displayName", "value": "Duration" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "nested" },
-            "properties": [{ "id": "custom.hidden", "value": true }]
-          }
-        ]
-      }
-    },
-    {
-      "id": 7,
-      "type": "table",
-      "title": "sales-agent Traces",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "datasource": { "type": "tempo", "uid": "tempo" },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "tempo", "uid": "tempo" },
-          "queryType": "traceql",
-          "query": "{resource.service.name = \"sales-agent\" && span.gen_ai.operation.name = \"chat\"}",
-          "tableType": "traces",
-          "limit": 20
+          "limit": 50
         }
       ],
       "options": {

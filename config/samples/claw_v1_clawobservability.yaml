@@ -14,10 +14,6 @@ spec:
     enabled: true
     dashboards:
       - fleet-overview
-      - agent-detail
-      - anomaly-feed
-      - budget-tracker
-    adminCredentialsSecret: grafana-admin-credentials
     expose: port-forward
   otlpEndpoint: "http://tempo.clawbernetes.svc.cluster.local:4318"
   otlpProtocol: http/protobuf
