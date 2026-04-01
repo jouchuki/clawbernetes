@@ -18,12 +18,15 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -36,7 +39,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	clawv1 "github.com/clawbernetes/operator/api/v1"
 )
@@ -49,7 +55,9 @@ var errRequeueNeeded = errors.New("requeue needed")
 // ClawAgentReconciler reconciles a ClawAgent object
 type ClawAgentReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme            *runtime.Scheme
+	lastDashboardHash string
+	dashboardMu       sync.Mutex
 }
 
 // +kubebuilder:rbac:groups=claw.clawbernetes.io,resources=clawagents,verbs=get;list;watch;create;update;patch;delete
@@ -79,6 +87,11 @@ func (r *ClawAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	ns := agent.Namespace
 	name := agent.Name
+
+	// Capture current status so we can skip the write if nothing changed.
+	oldPhase := agent.Status.Phase
+	oldPodName := agent.Status.PodName
+	oldPVC := agent.Status.WorkspacePVC
 
 	// --- Resolve the OTLP endpoint from the referenced ClawObservability ---
 	otlpEndpoint := ""
@@ -215,14 +228,16 @@ func (r *ClawAgentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// --- Status ---
+	// --- Status (skip write if unchanged) ---
 	phase, podName := r.resolveAgentStatus(ctx, ns, name)
 	agent.Status.Phase = phase
 	agent.Status.PodName = podName
 	agent.Status.WorkspacePVC = activePVC
-	if err := r.Status().Update(ctx, agent); err != nil {
-		log.Error(err, "unable to update ClawAgent status")
-		return ctrl.Result{}, err
+	if phase != oldPhase || podName != oldPodName || activePVC != oldPVC {
+		if err := r.Status().Update(ctx, agent); err != nil {
+			log.Error(err, "unable to update ClawAgent status")
+			return ctrl.Result{}, err
+		}
 	}
 
 	log.Info("reconciled ClawAgent", "name", name, "phase", phase)
@@ -292,6 +307,15 @@ func (r *ClawAgentReconciler) updateFleetDashboard(ctx context.Context, ns strin
 
 	html := generateFleetDashboardHTML(infos)
 
+	// Skip the ConfigMap write if the dashboard content hasn't changed.
+	sum := sha256.Sum256([]byte(html))
+	hash := hex.EncodeToString(sum[:])
+	r.dashboardMu.Lock()
+	defer r.dashboardMu.Unlock()
+	if hash == r.lastDashboardHash {
+		return nil
+	}
+
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "fleet-dashboard",
@@ -307,12 +331,17 @@ func (r *ClawAgentReconciler) updateFleetDashboard(ctx context.Context, ns strin
 	existing := &corev1.ConfigMap{}
 	if err := r.Get(ctx, key, existing); err != nil {
 		if apierrors.IsNotFound(err) {
+			r.lastDashboardHash = hash
 			return r.Create(ctx, cm)
 		}
 		return err
 	}
 	existing.Data = cm.Data
-	return r.Update(ctx, existing)
+	if err := r.Update(ctx, existing); err != nil {
+		return err
+	}
+	r.lastDashboardHash = hash
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1564,12 +1593,73 @@ func (r *ClawAgentReconciler) toolsMD(agent *clawv1.ClawAgent, ns, name string) 
 }
 
 // SetupWithManager sets up the controller with the Manager.
+// ---------------------------------------------------------------------------
+// Cross-resource watch mappers
+// ---------------------------------------------------------------------------
+
+func (r *ClawAgentReconciler) findAgentsReferencingField(ctx context.Context, obj client.Object, match func(clawv1.ClawAgentSpec) bool) []reconcile.Request {
+	agents := &clawv1.ClawAgentList{}
+	if err := r.List(ctx, agents, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, a := range agents.Items {
+		if match(a.Spec) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: a.Name, Namespace: a.Namespace},
+			})
+		}
+	}
+	return requests
+}
+
+func (r *ClawAgentReconciler) findAgentsForPolicy(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		return s.Policy == obj.GetName()
+	})
+}
+
+func (r *ClawAgentReconciler) findAgentsForSkillSet(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		return s.SkillSet == obj.GetName()
+	})
+}
+
+func (r *ClawAgentReconciler) findAgentsForChannel(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		for _, ch := range s.Channels {
+			if ch == obj.GetName() {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+func (r *ClawAgentReconciler) findAgentsForGateway(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		return s.Gateway == obj.GetName()
+	})
+}
+
+func (r *ClawAgentReconciler) findAgentsForObservability(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		return s.Observability == obj.GetName()
+	})
+}
+
 func (r *ClawAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&clawv1.ClawAgent{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
+		Watches(&clawv1.ClawPolicy{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForPolicy)).
+		Watches(&clawv1.ClawSkillSet{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForSkillSet)).
+		Watches(&clawv1.ClawChannel{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForChannel)).
+		Watches(&clawv1.ClawGateway{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForGateway)).
+		Watches(&clawv1.ClawObservability{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForObservability)).
+		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: 5}).
 		Named("clawagent").
 		Complete(r)
 }
