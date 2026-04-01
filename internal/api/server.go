@@ -211,7 +211,10 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	channels := &clawv1.ClawChannelList{}
-	s.Client.List(context.Background(), channels, client.InNamespace(s.Namespace))
+	if err := s.Client.List(context.Background(), channels, client.InNamespace(s.Namespace)); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
 
 	summary := FleetSummary{
 		TotalAgents:   len(agents.Items),
