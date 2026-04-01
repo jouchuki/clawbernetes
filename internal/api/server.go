@@ -11,14 +11,15 @@ You may obtain a copy of the License at
 package api
 
 import (
-	"context"
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -61,23 +62,23 @@ func NewServer(c client.Client, ns string, port int) (*Server, error) {
 
 // AgentResponse is the JSON response for a single agent.
 type AgentResponse struct {
-	Name         string            `json:"name"`
-	Phase        string            `json:"phase"`
-	PodName      string            `json:"podName,omitempty"`
-	Provider     string            `json:"provider,omitempty"`
-	Model        string            `json:"model,omitempty"`
-	Soul         string            `json:"soul,omitempty"`
-	Channels     []string          `json:"channels,omitempty"`
-	WorkspacePVC string            `json:"workspacePVC,omitempty"`
-	WorkspaceMode string           `json:"workspaceMode,omitempty"`
-	ReclaimPolicy string           `json:"reclaimPolicy,omitempty"`
-	A2AEnabled   bool              `json:"a2aEnabled"`
-	A2APeers     []string          `json:"a2aPeers,omitempty"`
-	A2ASkills    []string          `json:"a2aSkills,omitempty"`
-	BudgetDaily  int               `json:"budgetDaily,omitempty"`
-	BudgetMonthly int             `json:"budgetMonthly,omitempty"`
-	ToolDeny     []string          `json:"toolDeny,omitempty"`
-	Labels       map[string]string `json:"labels,omitempty"`
+	Name          string            `json:"name"`
+	Phase         string            `json:"phase"`
+	PodName       string            `json:"podName,omitempty"`
+	Provider      string            `json:"provider,omitempty"`
+	Model         string            `json:"model,omitempty"`
+	Soul          string            `json:"soul,omitempty"`
+	Channels      []string          `json:"channels,omitempty"`
+	WorkspacePVC  string            `json:"workspacePVC,omitempty"`
+	WorkspaceMode string            `json:"workspaceMode,omitempty"`
+	ReclaimPolicy string            `json:"reclaimPolicy,omitempty"`
+	A2AEnabled    bool              `json:"a2aEnabled"`
+	A2APeers      []string          `json:"a2aPeers,omitempty"`
+	A2ASkills     []string          `json:"a2aSkills,omitempty"`
+	BudgetDaily   int               `json:"budgetDaily,omitempty"`
+	BudgetMonthly int               `json:"budgetMonthly,omitempty"`
+	ToolDeny      []string          `json:"toolDeny,omitempty"`
+	Labels        map[string]string `json:"labels,omitempty"`
 }
 
 // ChannelResponse is the JSON response for a single channel.
@@ -242,26 +243,34 @@ type ActivityEvent struct {
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
 	// Read pod logs for each agent — look for A2A gateway structured JSON events
 	// and observeclaw alerts.
 	agents := &clawv1.ClawAgentList{}
-	if err := s.Client.List(context.Background(), agents, client.InNamespace(s.Namespace)); err != nil {
+	if err := s.Client.List(ctx, agents, client.InNamespace(s.Namespace)); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
 
+	const maxEvents = 50
 	var events []ActivityEvent
 
 	for _, a := range agents.Items {
+		if len(events) >= maxEvents {
+			break
+		}
+
 		// Get recent pod logs
 		podList := &corev1.PodList{}
-		if err := s.Client.List(context.Background(), podList, client.InNamespace(s.Namespace), client.MatchingLabels{"app": a.Name}); err != nil || len(podList.Items) == 0 {
+		if err := s.Client.List(ctx, podList, client.InNamespace(s.Namespace), client.MatchingLabels{"app": a.Name}); err != nil || len(podList.Items) == 0 {
 			continue
 		}
 
 		pod := podList.Items[0]
 		// Read logs via the REST client
-		logLines := s.getPodLogs(pod.Name, 200)
+		logLines := s.getPodLogs(ctx, pod.Name, 50)
 		for _, line := range logLines {
 			// Parse structured A2A events: {"ts":"...","component":"a2a-gateway","event":"task.finished",...}
 			if strings.Contains(line, `"component":"a2a-gateway"`) && strings.Contains(line, `"event"`) {
@@ -343,7 +352,7 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 // getPodLogs reads the last N lines of logs from a pod's openclaw container.
-func (s *Server) getPodLogs(podName string, lines int) []string {
+func (s *Server) getPodLogs(ctx context.Context, podName string, lines int) []string {
 	if s.Clientset == nil {
 		return nil
 	}
@@ -354,7 +363,7 @@ func (s *Server) getPodLogs(podName string, lines int) []string {
 		TailLines: &tailLines,
 	}
 	req := s.Clientset.CoreV1().Pods(s.Namespace).GetLogs(podName, opts)
-	stream, err := req.Stream(context.Background())
+	stream, err := req.Stream(ctx)
 	if err != nil {
 		return nil
 	}
