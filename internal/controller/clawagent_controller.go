@@ -40,7 +40,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	clawv1 "github.com/clawbernetes/operator/api/v1"
 )
@@ -1591,12 +1593,72 @@ func (r *ClawAgentReconciler) toolsMD(agent *clawv1.ClawAgent, ns, name string) 
 }
 
 // SetupWithManager sets up the controller with the Manager.
+// ---------------------------------------------------------------------------
+// Cross-resource watch mappers
+// ---------------------------------------------------------------------------
+
+func (r *ClawAgentReconciler) findAgentsReferencingField(ctx context.Context, obj client.Object, match func(clawv1.ClawAgentSpec) bool) []reconcile.Request {
+	agents := &clawv1.ClawAgentList{}
+	if err := r.List(ctx, agents, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, a := range agents.Items {
+		if match(a.Spec) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: a.Name, Namespace: a.Namespace},
+			})
+		}
+	}
+	return requests
+}
+
+func (r *ClawAgentReconciler) findAgentsForPolicy(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		return s.Policy == obj.GetName()
+	})
+}
+
+func (r *ClawAgentReconciler) findAgentsForSkillSet(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		return s.SkillSet == obj.GetName()
+	})
+}
+
+func (r *ClawAgentReconciler) findAgentsForChannel(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		for _, ch := range s.Channels {
+			if ch == obj.GetName() {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+func (r *ClawAgentReconciler) findAgentsForGateway(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		return s.Gateway == obj.GetName()
+	})
+}
+
+func (r *ClawAgentReconciler) findAgentsForObservability(ctx context.Context, obj client.Object) []reconcile.Request {
+	return r.findAgentsReferencingField(ctx, obj, func(s clawv1.ClawAgentSpec) bool {
+		return s.Observability == obj.GetName()
+	})
+}
+
 func (r *ClawAgentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&clawv1.ClawAgent{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&corev1.Service{}).
+		Watches(&clawv1.ClawPolicy{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForPolicy)).
+		Watches(&clawv1.ClawSkillSet{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForSkillSet)).
+		Watches(&clawv1.ClawChannel{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForChannel)).
+		Watches(&clawv1.ClawGateway{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForGateway)).
+		Watches(&clawv1.ClawObservability{}, handler.EnqueueRequestsFromMapFunc(r.findAgentsForObservability)).
 		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: 5}).
 		Named("clawagent").
 		Complete(r)
