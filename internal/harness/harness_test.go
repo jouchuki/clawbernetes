@@ -32,6 +32,7 @@ func TestForType(t *testing.T) {
 		wantName string
 	}{
 		{clawv1.HarnessOpenClaw, "openclaw"},
+		{clawv1.HarnessObserveClaw, "observeclaw"},
 		{clawv1.HarnessHermes, "hermes"},
 		{"", "openclaw"},        // empty defaults to openclaw
 		{"unknown", "openclaw"}, // unknown defaults to openclaw
@@ -48,6 +49,7 @@ func TestForType(t *testing.T) {
 func TestHarnessProperties(t *testing.T) {
 	harnesses := []Harness{
 		&OpenClawHarness{},
+		&ObserveClawHarness{},
 		&HermesHarness{},
 	}
 
@@ -117,6 +119,30 @@ func TestHermesDefaultImage(t *testing.T) {
 	}
 	if got := h.ConfigFileName(); got != "config.yaml" {
 		t.Errorf("ConfigFileName() = %q, want config.yaml", got)
+	}
+}
+
+// TestObserveClawDefaults verifies ObserveClaw uses the custom-built image and inherits OpenClaw behavior.
+func TestObserveClawDefaults(t *testing.T) {
+	h := &ObserveClawHarness{}
+	if got := h.DefaultImage(); got != "clawbernetes/openclaw:latest" {
+		t.Errorf("DefaultImage() = %q, want clawbernetes/openclaw:latest", got)
+	}
+	if got := h.Name(); got != "observeclaw" {
+		t.Errorf("Name() = %q, want observeclaw", got)
+	}
+	if got := h.ContainerName(); got != "observeclaw" {
+		t.Errorf("ContainerName() = %q, want observeclaw", got)
+	}
+	// Should inherit OpenClaw's port, paths, and probes
+	if got := h.GatewayPort(); got != 18789 {
+		t.Errorf("GatewayPort() = %d, want 18789 (inherited from OpenClaw)", got)
+	}
+	if got := h.ReadinessPath(); got != "/ready" {
+		t.Errorf("ReadinessPath() = %q, want /ready (inherited from OpenClaw)", got)
+	}
+	if got := h.HomePath(); got != "/home/node/.openclaw" {
+		t.Errorf("HomePath() = %q, want /home/node/.openclaw (inherited from OpenClaw)", got)
 	}
 }
 
@@ -267,7 +293,7 @@ func TestHermesBuildConfig(t *testing.T) {
 
 // TestCopyExtensionsCommandsNotEmpty verifies each harness has copy-extensions commands.
 func TestCopyExtensionsCommandsNotEmpty(t *testing.T) {
-	harnesses := []Harness{&OpenClawHarness{}, &HermesHarness{}}
+	harnesses := []Harness{&OpenClawHarness{}, &ObserveClawHarness{}, &HermesHarness{}}
 	for _, h := range harnesses {
 		t.Run(h.Name(), func(t *testing.T) {
 			cmds := h.CopyExtensionsCommands()
@@ -289,7 +315,7 @@ func TestOpenClawCopyExtensionsReferencesHome(t *testing.T) {
 
 // TestSeedCommandsContainConfigFile verifies seed commands reference the config file name.
 func TestSeedCommandsContainConfigFile(t *testing.T) {
-	harnesses := []Harness{&OpenClawHarness{}, &HermesHarness{}}
+	harnesses := []Harness{&OpenClawHarness{}, &ObserveClawHarness{}, &HermesHarness{}}
 	for _, h := range harnesses {
 		t.Run(h.Name(), func(t *testing.T) {
 			cmds := h.SeedCommands()
@@ -301,15 +327,16 @@ func TestSeedCommandsContainConfigFile(t *testing.T) {
 	}
 }
 
-// TestUniqueGatewayPorts verifies each harness uses a distinct gateway port.
-func TestUniqueGatewayPorts(t *testing.T) {
-	harnesses := []Harness{&OpenClawHarness{}, &HermesHarness{}}
-	seen := map[int32]string{}
-	for _, h := range harnesses {
-		port := h.GatewayPort()
-		if prev, ok := seen[port]; ok {
-			t.Errorf("%s and %s share gateway port %d", prev, h.Name(), port)
-		}
-		seen[port] = h.Name()
+// TestDistinctRuntimePorts verifies harnesses with different runtimes use distinct ports.
+// ObserveClaw intentionally shares OpenClaw's port since it's the same runtime.
+func TestDistinctRuntimePorts(t *testing.T) {
+	openclaw := &OpenClawHarness{}
+	hermes := &HermesHarness{}
+	if openclaw.GatewayPort() == hermes.GatewayPort() {
+		t.Errorf("openclaw and hermes should use different ports, both use %d", openclaw.GatewayPort())
+	}
+	observeclaw := &ObserveClawHarness{}
+	if observeclaw.GatewayPort() != openclaw.GatewayPort() {
+		t.Errorf("observeclaw should share openclaw's port, got %d vs %d", observeclaw.GatewayPort(), openclaw.GatewayPort())
 	}
 }

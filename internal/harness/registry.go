@@ -21,6 +21,8 @@ import clawv1 "github.com/clawbernetes/operator/api/v1"
 // ForType returns the Harness implementation for the given type.
 func ForType(t clawv1.HarnessType) Harness {
 	switch t {
+	case clawv1.HarnessObserveClaw:
+		return &ObserveClawHarness{}
 	case clawv1.HarnessHermes:
 		return &HermesHarness{}
 	default:
