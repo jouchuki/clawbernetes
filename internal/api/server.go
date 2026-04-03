@@ -111,6 +111,9 @@ func (s *Server) Start(ctx context.Context) error {
 		writeJSON(w, map[string]string{"status": "ok"})
 	})
 
+	// CRUD routes for all 6 CRD types
+	s.registerCRUDRoutes(mux)
+
 	// Serve embedded React UI at root
 	if s.UIAssets != nil {
 		fileServer := http.FileServer(http.FS(s.UIAssets))
@@ -401,7 +404,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(204)
