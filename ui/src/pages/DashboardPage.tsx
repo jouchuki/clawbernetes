@@ -1,9 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { apiFetch } from '../api/client'
 import type { FleetSummary, ClawAgent, ActivityEvent } from '../api/types'
 import StatusBadge from '../components/shared/StatusBadge'
 import LoadingSpinner from '../components/shared/LoadingSpinner'
 import ErrorAlert from '../components/shared/ErrorAlert'
+
+// Color palette for harness types
+const HARNESS_COLORS: Record<string, string> = {
+  openclaw: '#4ecca3',
+  observeclaw: '#e94560',
+  hermes: '#ffd369',
+}
+const HARNESS_COLOR_DEFAULT = '#888888'
+
+function harnessColor(type: string) {
+  return HARNESS_COLORS[type] || HARNESS_COLOR_DEFAULT
+}
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<FleetSummary | null>(null)
@@ -67,6 +79,13 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* Fleet topology graph */}
+      {agents.length > 0 && (
+        <div className="mb-8">
+          <FleetGraph agents={agents} />
+        </div>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-3">
         {/* Agent cards */}
         <div className="xl:col-span-2">
@@ -122,6 +141,175 @@ function SummaryCard({
     <div className="rounded-lg border border-claw-border bg-claw-card p-4 text-center">
       <div className={`text-3xl font-bold ${color}`}>{value}</div>
       <div className="mt-1 text-xs uppercase tracking-wide text-claw-dim">{label}</div>
+    </div>
+  )
+}
+
+function FleetGraph({ agents }: { agents: ClawAgent[] }) {
+  const { nodes, edges, harnessTypes, hasEphemeral, hasPersistent } = useMemo(() => {
+    const harnessSet = new Set<string>()
+    let hasEph = false
+    let hasPer = false
+
+    // Build nodes for ALL agents
+    const nodes = agents.map((a, i) => {
+      const harness = a.spec.harness?.type ?? 'openclaw'
+      const ws = a.spec.workspace?.mode ?? 'ephemeral'
+      harnessSet.add(harness)
+      if (ws === 'persistent') hasPer = true; else hasEph = true
+      return {
+        name: a.metadata.name,
+        harness,
+        workspace: ws,
+        phase: a.status?.phase ?? 'Unknown',
+        a2a: !!a.spec.a2a?.enabled,
+        index: i,
+      }
+    })
+
+    // Build edges from A2A peers
+    const edges: { from: string; to: string }[] = []
+    for (const a of agents) {
+      if (!a.spec.a2a?.enabled) continue
+      for (const peer of a.spec.a2a.peers ?? []) {
+        // Deduplicate bidirectional
+        if (!edges.some(e => (e.from === peer.name && e.to === a.metadata.name))) {
+          edges.push({ from: a.metadata.name, to: peer.name })
+        }
+      }
+    }
+
+    return { nodes, edges, harnessTypes: Array.from(harnessSet), hasEphemeral: hasEph, hasPersistent: hasPer }
+  }, [agents])
+
+  // Layout: circular for A2A nodes, row below for non-A2A
+  const W = 600
+  const H = 340
+  const cx = W / 2
+  const cy = 140
+
+  const a2aNodes = nodes.filter(n => n.a2a)
+  const otherNodes = nodes.filter(n => !n.a2a)
+  const r = Math.max(80, Math.min(120, a2aNodes.length * 30))
+
+  const positions = new Map<string, { x: number; y: number }>()
+
+  // A2A nodes in a circle
+  a2aNodes.forEach((n, i) => {
+    const angle = (2 * Math.PI * i) / Math.max(a2aNodes.length, 1) - Math.PI / 2
+    positions.set(n.name, {
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+    })
+  })
+
+  // Non-A2A nodes in a row below
+  const rowY = cy + r + 70
+  const rowSpacing = Math.min(120, (W - 80) / Math.max(otherNodes.length, 1))
+  const rowStart = cx - ((otherNodes.length - 1) * rowSpacing) / 2
+  otherNodes.forEach((n, i) => {
+    positions.set(n.name, { x: rowStart + i * rowSpacing, y: rowY })
+  })
+
+  const nodeRadius = 28
+
+  return (
+    <div className="rounded-lg border border-claw-border bg-claw-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-claw-accent">Fleet Topology</h2>
+        {/* Legend */}
+        <div className="flex flex-wrap gap-3 text-xs">
+          {harnessTypes.map(h => (
+            <span key={h} className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full" style={{ background: harnessColor(h) }} />
+              {h}
+            </span>
+          ))}
+          {hasPersistent && (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full border-2 border-claw-text" /> persistent
+            </span>
+          )}
+          {hasEphemeral && (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full border-2 border-dashed border-claw-dim" /> ephemeral
+            </span>
+          )}
+        </div>
+      </div>
+
+      <svg width="100%" viewBox={`0 0 ${W} ${H + (otherNodes.length > 0 ? 40 : 0)}`} className="mx-auto max-w-2xl">
+        {/* A2A connection edges */}
+        {edges.map((e, i) => {
+          const from = positions.get(e.from)
+          const to = positions.get(e.to)
+          if (!from || !to) return null
+          return (
+            <line
+              key={i}
+              x1={from.x} y1={from.y}
+              x2={to.x} y2={to.y}
+              stroke="#4ecca3"
+              strokeWidth={2}
+              strokeDasharray="6 3"
+              opacity={0.5}
+            />
+          )
+        })}
+
+        {/* Agent nodes */}
+        {nodes.map(n => {
+          const pos = positions.get(n.name)
+          if (!pos) return null
+          const color = harnessColor(n.harness)
+          const isEphemeral = n.workspace === 'ephemeral'
+          const phaseOpacity = n.phase === 'Running' ? 1 : 0.5
+
+          return (
+            <g key={n.name} opacity={phaseOpacity}>
+              {/* Node circle */}
+              <circle
+                cx={pos.x} cy={pos.y} r={nodeRadius}
+                fill="#1a1a2e"
+                stroke={color}
+                strokeWidth={2.5}
+                strokeDasharray={isEphemeral ? '5 3' : 'none'}
+              />
+              {/* A2A indicator ring */}
+              {n.a2a && (
+                <circle
+                  cx={pos.x} cy={pos.y} r={nodeRadius + 5}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={1}
+                  opacity={0.3}
+                />
+              )}
+              {/* Agent name */}
+              <text
+                x={pos.x} y={pos.y + 1}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="#e0e0e0"
+                fontSize={9}
+                fontWeight={500}
+              >
+                {n.name.length > 12 ? n.name.slice(0, 11) + '…' : n.name}
+              </text>
+              {/* Harness label below */}
+              <text
+                x={pos.x} y={pos.y + nodeRadius + 14}
+                textAnchor="middle"
+                fill={color}
+                fontSize={8}
+                opacity={0.7}
+              >
+                {n.harness}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
     </div>
   )
 }
