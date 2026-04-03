@@ -7,6 +7,7 @@ import PolicyListPage from './pages/PolicyListPage'
 import SkillSetListPage from './pages/SkillSetListPage'
 import GatewayListPage from './pages/GatewayListPage'
 import ObservabilityListPage from './pages/ObservabilityListPage'
+import AgentDetailPage from './pages/AgentDetailPage'
 
 function App() {
   return (
@@ -14,6 +15,7 @@ function App() {
       <Route element={<Layout />}>
         <Route index element={<DashboardPage />} />
         <Route path="agents" element={<AgentListPage />} />
+        <Route path="agents/:name" element={<AgentDetailPage />} />
         <Route path="channels" element={<ChannelListPage />} />
         <Route path="policies" element={<PolicyListPage />} />
         <Route path="skillsets" element={<SkillSetListPage />} />
