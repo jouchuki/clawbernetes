@@ -17,15 +17,15 @@ export default function DashboardPage() {
 
     async function fetchAll() {
       try {
-        const [s, a, act] = await Promise.all([
+        const [s, aRaw, act] = await Promise.all([
           apiFetch<FleetSummary>('/api/summary'),
-          apiFetch<ClawAgent[]>('/api/agents'),
+          apiFetch<{ items?: ClawAgent[] } | ClawAgent[]>('/api/agents'),
           apiFetch<ActivityEvent[]>('/api/activity'),
         ])
         if (!cancelled) {
           setSummary(s)
-          setAgents(a)
-          setActivity(act)
+          setAgents(Array.isArray(aRaw) ? aRaw : (aRaw.items || []))
+          setActivity(Array.isArray(act) ? act : [])
           setError(null)
         }
       } catch (err) {
@@ -61,9 +61,9 @@ export default function DashboardPage() {
       {summary && (
         <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <SummaryCard label="Total Agents" value={summary.totalAgents} color="text-claw-accent" />
-          <SummaryCard label="Running" value={summary.running} color="text-claw-accent" />
-          <SummaryCard label="Channels" value={summary.channels} color="text-claw-text" />
-          <SummaryCard label="A2A Links" value={summary.a2aLinks} color="text-claw-text" />
+          <SummaryCard label="Running" value={summary.runningAgents} color="text-claw-accent" />
+          <SummaryCard label="Channels" value={summary.totalChannels} color="text-claw-text" />
+          <SummaryCard label="A2A Links" value={summary.a2aConnections} color="text-claw-text" />
         </div>
       )}
 
@@ -91,12 +91,12 @@ export default function DashboardPage() {
             <div className="space-y-2">
               {activity.slice(0, 20).map((event, i) => (
                 <div
-                  key={`${event.timestamp}-${i}`}
+                  key={`${event.ts}-${i}`}
                   className="rounded-lg border border-claw-border bg-claw-card p-3"
                 >
                   <div className="flex items-center justify-between text-xs text-claw-dim">
                     <span>{event.agent}</span>
-                    <span>{new Date(event.timestamp).toLocaleTimeString()}</span>
+                    <span>{event.ts ? new Date(event.ts).toLocaleTimeString() : ''}</span>
                   </div>
                   <p className="mt-1 text-sm">{event.message}</p>
                 </div>
@@ -130,6 +130,10 @@ function AgentCard({ agent }: { agent: ClawAgent }) {
   const phase = agent.status?.phase ?? 'Unknown'
   const model = agent.spec.model?.name ?? 'not set'
   const provider = agent.spec.model?.provider ?? ''
+  const harness = agent.spec.harness?.type ?? 'openclaw'
+  const image = agent.spec.harness?.image ?? ''
+  const channels = agent.spec.channels ?? []
+  const workspace = agent.spec.workspace?.mode ?? 'ephemeral'
   const soul = agent.spec.identity?.soul ?? ''
   const soulSnippet = soul.length > 80 ? soul.slice(0, 80) + '...' : soul
 
@@ -140,10 +144,23 @@ function AgentCard({ agent }: { agent: ClawAgent }) {
         <StatusBadge phase={phase} />
       </div>
       <div className="space-y-1.5 p-4 text-sm">
+        <div className="flex flex-wrap gap-1.5">
+          <span className="rounded bg-claw-border/60 px-1.5 py-0.5 text-xs">{harness}</span>
+          {channels.map(ch => (
+            <span key={ch} className="rounded bg-claw-accent/20 text-claw-accent px-1.5 py-0.5 text-xs">{ch}</span>
+          ))}
+          <span className="rounded bg-claw-border/40 px-1.5 py-0.5 text-xs text-claw-dim">{workspace}</span>
+        </div>
         <div>
           <span className="text-claw-dim">Model: </span>
           {provider ? `${provider} / ${model}` : model}
         </div>
+        {image && (
+          <div>
+            <span className="text-claw-dim">Image: </span>
+            <span className="text-xs font-mono">{image}</span>
+          </div>
+        )}
         {soulSnippet && (
           <div className="mt-2 rounded border-l-2 border-claw-border bg-claw-border/20 px-3 py-2 text-xs italic text-claw-dim">
             "{soulSnippet}"

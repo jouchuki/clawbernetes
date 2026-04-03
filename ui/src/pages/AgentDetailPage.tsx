@@ -73,6 +73,11 @@ function OverviewTab({ agent }: { agent: ClawAgent }) {
         )}
       </Section>
 
+      <Section title="Harness">
+        <Field label="Type" value={spec.harness?.type ?? 'openclaw'} />
+        <Field label="Image" value={spec.harness?.image || 'default'} />
+      </Section>
+
       <Section title="Model">
         <Field
           label="Provider / Name"

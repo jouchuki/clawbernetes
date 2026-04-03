@@ -63,7 +63,13 @@ export interface A2ASpec {
   securityTokenSecret?: string
 }
 
+export interface HarnessSpec {
+  type?: string
+  image?: string
+}
+
 export interface ClawAgentSpec {
+  harness?: HarnessSpec
   identity?: AgentIdentitySpec
   skillSet?: string
   policy?: string
@@ -259,16 +265,17 @@ export interface ClawObservability {
 
 export interface FleetSummary {
   totalAgents: number
-  running: number
-  pending: number
-  error: number
-  channels: number
-  a2aLinks: number
+  runningAgents: number
+  totalChannels: number
+  a2aConnections: number
 }
 
 export interface ActivityEvent {
-  timestamp: string
+  ts: string
   type: string
   agent: string
   message: string
+  status?: string
+  taskId?: string
+  durationMs?: number
 }

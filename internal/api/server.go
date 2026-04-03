@@ -103,8 +103,6 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 
 	// API routes
-	mux.HandleFunc("/api/agents", s.handleAgents)
-	mux.HandleFunc("/api/channels", s.handleChannels)
 	mux.HandleFunc("/api/summary", s.handleSummary)
 	mux.HandleFunc("/api/activity", s.handleActivity)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +111,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// CRUD routes for all 6 CRD types
 	s.registerCRUDRoutes(mux)
+
 
 	// Serve embedded React UI at root
 	if s.UIAssets != nil {

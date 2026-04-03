@@ -104,10 +104,10 @@ func (s *Server) resolveAgentPod(ctx context.Context, agentName string) (string,
 	// Try the status-reported pod name first, then fall back to label selector.
 	if agent.Status.PodName != "" {
 		pod, err := s.Clientset.CoreV1().Pods(s.Namespace).Get(ctx, agent.Status.PodName, metav1.GetOptions{})
-		if err != nil {
-			return "", "", fmt.Errorf("getting pod %q: %w", agent.Status.PodName, err)
+		if err == nil {
+			return pod.Name, firstContainerName(pod), nil
 		}
-		return pod.Name, firstContainerName(pod), nil
+		// Status pod name may contain extra text (e.g. "name (replicas: 1)") — fall through to label selector.
 	}
 
 	pods, err := s.Clientset.CoreV1().Pods(s.Namespace).List(ctx, metav1.ListOptions{
