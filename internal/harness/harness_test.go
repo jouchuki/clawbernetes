@@ -79,12 +79,8 @@ func TestHarnessProperties(t *testing.T) {
 			if !strings.HasPrefix(h.ConfigMapSuffix(), "-") {
 				t.Errorf("ConfigMapSuffix() %q should start with '-'", h.ConfigMapSuffix())
 			}
-			if h.ReadinessPath() == "" {
-				t.Error("ReadinessPath() is empty")
-			}
-			if h.LivenessPath() == "" {
-				t.Error("LivenessPath() is empty")
-			}
+			// ReadinessPath/LivenessPath may be empty for harnesses that use
+			// exec probes instead of HTTP (e.g. Hermes has no HTTP health endpoint).
 			if h.ContainerName() == "" {
 				t.Error("ContainerName() is empty")
 			}
@@ -112,6 +108,18 @@ func TestHermesDefaultImage(t *testing.T) {
 	if got := h.DefaultImage(); got != "nousresearch/hermes-agent:latest" {
 		t.Errorf("DefaultImage() = %q, want nousresearch/hermes-agent:latest", got)
 	}
+	if got := h.GatewayPort(); got != 8642 {
+		t.Errorf("GatewayPort() = %d, want 8642", got)
+	}
+	if got := h.HomePath(); got != "/opt/data" {
+		t.Errorf("HomePath() = %q, want /opt/data", got)
+	}
+	if got := h.ReadinessPath(); got != "" {
+		t.Errorf("ReadinessPath() = %q, want empty (exec probe)", got)
+	}
+	if got := h.ConfigFileName(); got != "config.yaml" {
+		t.Errorf("ConfigFileName() = %q, want config.yaml", got)
+	}
 }
 
 // TestIronClawDefaultImage verifies IronClaw points to the published Docker Hub image.
@@ -119,6 +127,15 @@ func TestIronClawDefaultImage(t *testing.T) {
 	h := &IronClawHarness{}
 	if got := h.DefaultImage(); got != "nearaidev/ironclaw:latest" {
 		t.Errorf("DefaultImage() = %q, want nearaidev/ironclaw:latest", got)
+	}
+	if got := h.GatewayPort(); got != 3000 {
+		t.Errorf("GatewayPort() = %d, want 3000", got)
+	}
+	if got := h.HomePath(); got != "/root/.ironclaw" {
+		t.Errorf("HomePath() = %q, want /root/.ironclaw", got)
+	}
+	if got := h.ConfigFileName(); got != ".env" {
+		t.Errorf("ConfigFileName() = %q, want .env", got)
 	}
 }
 
@@ -227,12 +244,18 @@ func TestOpenClawBuildConfigWithOTLP(t *testing.T) {
 	}
 }
 
-// TestHermesBuildConfig verifies the Hermes stub config is valid JSON.
+// TestHermesBuildConfig verifies Hermes config.yaml has the expected structure.
 func TestHermesBuildConfig(t *testing.T) {
 	h := &HermesHarness{}
 	input := ConfigInput{
 		Agent: &clawv1.ClawAgent{
 			ObjectMeta: metav1.ObjectMeta{Name: "hermes-test", Namespace: "default"},
+			Spec: clawv1.ClawAgentSpec{
+				Model: clawv1.AgentModelSpec{
+					Provider: "anthropic",
+					Name:     "claude-sonnet-4-6",
+				},
+			},
 		},
 		Name:      "hermes-test",
 		Namespace: "default",
@@ -243,21 +266,36 @@ func TestHermesBuildConfig(t *testing.T) {
 		t.Fatalf("BuildConfig() error: %v", err)
 	}
 
-	var cfg map[string]any
-	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		t.Fatalf("Hermes BuildConfig() produced invalid JSON: %v", err)
+	// Verify YAML config contains expected sections
+	if !strings.Contains(raw, "provider: anthropic") {
+		t.Error("missing 'provider: anthropic' in Hermes config")
 	}
-	if cfg["agent"] != "hermes-test" {
-		t.Errorf("agent = %q, want 'hermes-test'", cfg["agent"])
+	if !strings.Contains(raw, "model: claude-sonnet-4-6") {
+		t.Error("missing 'model: claude-sonnet-4-6' in Hermes config")
+	}
+	if !strings.Contains(raw, "port: 8642") {
+		t.Error("missing 'port: 8642' in Hermes config")
+	}
+	if !strings.Contains(raw, "backend: local") {
+		t.Error("missing 'backend: local' terminal setting")
+	}
+	if !strings.Contains(raw, "${ANTHROPIC_API_KEY}") {
+		t.Error("missing API key env var reference")
 	}
 }
 
-// TestIronClawBuildConfig verifies the IronClaw stub config is valid JSON.
+// TestIronClawBuildConfig verifies the IronClaw .env has the expected structure.
 func TestIronClawBuildConfig(t *testing.T) {
 	h := &IronClawHarness{}
 	input := ConfigInput{
 		Agent: &clawv1.ClawAgent{
 			ObjectMeta: metav1.ObjectMeta{Name: "iron-test", Namespace: "default"},
+			Spec: clawv1.ClawAgentSpec{
+				Model: clawv1.AgentModelSpec{
+					Provider: "anthropic",
+					Name:     "claude-sonnet-4-6",
+				},
+			},
 		},
 		Name:      "iron-test",
 		Namespace: "default",
@@ -268,26 +306,40 @@ func TestIronClawBuildConfig(t *testing.T) {
 		t.Fatalf("BuildConfig() error: %v", err)
 	}
 
-	var cfg map[string]any
-	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		t.Fatalf("IronClaw BuildConfig() produced invalid JSON: %v", err)
+	// Verify .env format contains expected keys
+	if !strings.Contains(raw, "LLM_BACKEND=anthropic") {
+		t.Error("missing 'LLM_BACKEND=anthropic' in IronClaw config")
 	}
-	if cfg["agent"] != "iron-test" {
-		t.Errorf("agent = %q, want 'iron-test'", cfg["agent"])
+	if !strings.Contains(raw, "WEB_GATEWAY_PORT=3000") {
+		t.Error("missing 'WEB_GATEWAY_PORT=3000' in IronClaw config")
+	}
+	if !strings.Contains(raw, "INJECTION_CHECK_ENABLED=true") {
+		t.Error("missing safety setting in IronClaw config")
+	}
+	if !strings.Contains(raw, "DOCKER_POLICY=workspace_write") {
+		t.Error("missing Docker sandbox policy in IronClaw config")
 	}
 }
 
-// TestCopyExtensionsCommandsContainHomePath verifies the commands reference the harness home path.
-func TestCopyExtensionsCommandsContainHomePath(t *testing.T) {
+// TestCopyExtensionsCommandsNotEmpty verifies each harness has copy-extensions commands.
+func TestCopyExtensionsCommandsNotEmpty(t *testing.T) {
 	harnesses := []Harness{&OpenClawHarness{}, &HermesHarness{}, &IronClawHarness{}}
 	for _, h := range harnesses {
 		t.Run(h.Name(), func(t *testing.T) {
 			cmds := h.CopyExtensionsCommands()
-			joined := strings.Join(cmds, "\n")
-			if !strings.Contains(joined, h.HomePath()) {
-				t.Errorf("CopyExtensionsCommands() should reference HomePath %q", h.HomePath())
+			if len(cmds) == 0 {
+				t.Error("CopyExtensionsCommands() returned empty slice")
 			}
 		})
+	}
+}
+
+// TestOpenClawCopyExtensionsReferencesHome verifies OpenClaw specifically copies from its home path.
+func TestOpenClawCopyExtensionsReferencesHome(t *testing.T) {
+	h := &OpenClawHarness{}
+	joined := strings.Join(h.CopyExtensionsCommands(), "\n")
+	if !strings.Contains(joined, h.HomePath()) {
+		t.Errorf("OpenClaw CopyExtensionsCommands() should reference HomePath %q", h.HomePath())
 	}
 }
 

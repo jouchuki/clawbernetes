@@ -28,17 +28,19 @@ import (
 // OpenClawHarness implements the Harness interface for the OpenClaw agent runtime.
 type OpenClawHarness struct{}
 
-func (h *OpenClawHarness) Name() string            { return "openclaw" }
-func (h *OpenClawHarness) DefaultImage() string    { return "ghcr.io/openclaw/openclaw:latest" }
-func (h *OpenClawHarness) GatewayPort() int32      { return 18789 }
-func (h *OpenClawHarness) HomePath() string        { return "/home/node/.openclaw" }
-func (h *OpenClawHarness) WorkspacePath() string   { return "/home/node/.openclaw/workspace" }
-func (h *OpenClawHarness) ExtensionsPath() string  { return "/home/node/.openclaw/extensions" }
-func (h *OpenClawHarness) ConfigFileName() string  { return "openclaw.json" }
-func (h *OpenClawHarness) ConfigMapSuffix() string { return "-openclaw-config" }
-func (h *OpenClawHarness) ReadinessPath() string   { return "/ready" }
-func (h *OpenClawHarness) LivenessPath() string    { return "/health" }
-func (h *OpenClawHarness) ContainerName() string   { return "openclaw" }
+func (h *OpenClawHarness) Name() string               { return "openclaw" }
+func (h *OpenClawHarness) DefaultImage() string       { return "ghcr.io/openclaw/openclaw:latest" }
+func (h *OpenClawHarness) GatewayPort() int32         { return 18789 }
+func (h *OpenClawHarness) HomePath() string           { return "/home/node/.openclaw" }
+func (h *OpenClawHarness) WorkspacePath() string      { return "/home/node/.openclaw/workspace" }
+func (h *OpenClawHarness) ExtensionsPath() string     { return "/home/node/.openclaw/extensions" }
+func (h *OpenClawHarness) ConfigFileName() string     { return "openclaw.json" }
+func (h *OpenClawHarness) ConfigMapSuffix() string    { return "-openclaw-config" }
+func (h *OpenClawHarness) ReadinessPath() string      { return "/ready" }
+func (h *OpenClawHarness) LivenessPath() string       { return "/health" }
+func (h *OpenClawHarness) ContainerName() string      { return "openclaw" }
+func (h *OpenClawHarness) ContainerCommand() []string { return nil }
+func (h *OpenClawHarness) RunAsUser() *int64          { uid := int64(1000); return &uid }
 
 func (h *OpenClawHarness) CopyExtensionsCommands() []string {
 	return DefaultCopyExtensionsCommands(h.HomePath())

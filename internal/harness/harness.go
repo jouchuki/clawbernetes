@@ -31,6 +31,8 @@ type Harness interface {
 	ReadinessPath() string
 	LivenessPath() string
 	ContainerName() string
+	ContainerCommand() []string
+	RunAsUser() *int64
 	BuildConfig(input ConfigInput) (string, error)
 	CopyExtensionsCommands() []string
 	SeedCommands() []string

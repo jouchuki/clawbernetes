@@ -721,30 +721,13 @@ func (r *ClawAgentReconciler) agentDeployment(p deploymentParams) *appsv1.Deploy
 		Name:            h.ContainerName(),
 		Image:           image,
 		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         h.ContainerCommand(),
 		Env:             env,
 		Ports: []corev1.ContainerPort{
 			{Name: "gateway", ContainerPort: int32(gatewayPort), Protocol: corev1.ProtocolTCP},
 		},
-		ReadinessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path: h.ReadinessPath(),
-					Port: intstr.FromInt(gatewayPort),
-				},
-			},
-			InitialDelaySeconds: 5,
-			PeriodSeconds:       10,
-		},
-		LivenessProbe: &corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path: h.LivenessPath(),
-					Port: intstr.FromInt(gatewayPort),
-				},
-			},
-			InitialDelaySeconds: 10,
-			PeriodSeconds:       30,
-		},
+		ReadinessProbe: buildProbe(h.ReadinessPath(), gatewayPort, 5, 10),
+		LivenessProbe:  buildProbe(h.LivenessPath(), gatewayPort, 10, 30),
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "harness-home", MountPath: h.HomePath()},
 		},
@@ -880,15 +863,11 @@ func (r *ClawAgentReconciler) agentDeployment(p deploymentParams) *appsv1.Deploy
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
-					SecurityContext: &corev1.PodSecurityContext{
-						RunAsUser:  int64Ptr(1000),
-						RunAsGroup: int64Ptr(1000),
-						FSGroup:    int64Ptr(1000),
-					},
-					RestartPolicy:  restartPolicy,
-					InitContainers: []corev1.Container{copyExtensions, seedWorkspace},
-					Containers:     []corev1.Container{mainContainer},
-					Volumes:        volumes,
+					SecurityContext: podSecurityContext(h),
+					RestartPolicy:   restartPolicy,
+					InitContainers:  []corev1.Container{copyExtensions, seedWorkspace},
+					Containers:      []corev1.Container{mainContainer},
+					Volumes:         volumes,
 				},
 			},
 		},
@@ -956,6 +935,43 @@ func boolPtr(b bool) *bool {
 
 func int64Ptr(i int64) *int64 {
 	return &i
+}
+
+func buildProbe(path string, port, initialDelay, period int) *corev1.Probe {
+	if path == "" {
+		// No HTTP health endpoint — use an exec probe that checks the process is alive.
+		return &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"test", "-f", "/proc/1/status"},
+				},
+			},
+			InitialDelaySeconds: int32(initialDelay),
+			PeriodSeconds:       int32(period),
+		}
+	}
+	return &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: path,
+				Port: intstr.FromInt(port),
+			},
+		},
+		InitialDelaySeconds: int32(initialDelay),
+		PeriodSeconds:       int32(period),
+	}
+}
+
+func podSecurityContext(h harness.Harness) *corev1.PodSecurityContext {
+	uid := h.RunAsUser()
+	if uid == nil {
+		return nil
+	}
+	return &corev1.PodSecurityContext{
+		RunAsUser:  uid,
+		RunAsGroup: uid,
+		FSGroup:    uid,
+	}
 }
 
 // ---------------------------------------------------------------------------
