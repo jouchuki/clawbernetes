@@ -1,5 +1,13 @@
-body {
-  margin: 0;
-  background: #0f0f1a;
-  color: #e0e0e0;
+@import "tailwindcss";
+
+/* Custom theme */
+@theme {
+  --color-claw-bg: #1a1a2e;
+  --color-claw-card: #16213e;
+  --color-claw-border: #0f3460;
+  --color-claw-accent: #4ecca3;
+  --color-claw-warn: #ffd369;
+  --color-claw-error: #fc5185;
+  --color-claw-text: #e0e0e0;
+  --color-claw-dim: #888888;
 }

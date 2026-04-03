@@ -146,34 +146,18 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	"$(KUSTOMIZE)" build config/default > dist/install.yaml
 
-##@ Harness Images
+##@ OpenClaw
 
-HARNESS ?= openclaw
-HARNESS_IMG ?= clawbernetes/$(HARNESS):latest
 OPENCLAW_IMG ?= clawbernetes/openclaw:latest
-HERMES_IMG ?= clawbernetes/hermes:latest
-IRONCLAW_IMG ?= clawbernetes/ironclaw:latest
 KIND_CLUSTER_NAME ?= clawbernetes
 
-.PHONY: build-harness-image
-build-harness-image: ## Build a harness image. Usage: make build-harness-image HARNESS=openclaw
-	./build/$(HARNESS)/build.sh $(HARNESS_IMG) $(CONTAINER_TOOL)
-
 .PHONY: build-openclaw-image
-build-openclaw-image: ## Build the OpenClaw harness image.
-	$(MAKE) build-harness-image HARNESS=openclaw HARNESS_IMG=$(OPENCLAW_IMG)
-
-.PHONY: build-hermes-image
-build-hermes-image: ## Build the Hermes harness image.
-	$(MAKE) build-harness-image HARNESS=hermes HARNESS_IMG=$(HERMES_IMG)
-
-.PHONY: build-ironclaw-image
-build-ironclaw-image: ## Build the IronClaw harness image.
-	$(MAKE) build-harness-image HARNESS=ironclaw HARNESS_IMG=$(IRONCLAW_IMG)
+build-openclaw-image: ## Clone the orq.ai OpenClaw fork, install plugins (observeclaw + a2a-gateway), and build the container image.
+	./build/openclaw/build.sh $(OPENCLAW_IMG) $(CONTAINER_TOOL)
 
 .PHONY: load-kind
-load-kind: ## Load a harness image into the local kind cluster. Usage: make load-kind HARNESS_IMG=clawbernetes/openclaw:latest
-	$(KIND) load docker-image $(HARNESS_IMG) --name $(KIND_CLUSTER_NAME)
+load-kind: ## Load the OpenClaw image into the local kind cluster.
+	$(KIND) load docker-image $(OPENCLAW_IMG) --name $(KIND_CLUSTER_NAME)
 
 .PHONY: create-secrets
 create-secrets: ## Create K8s secrets from .env file.

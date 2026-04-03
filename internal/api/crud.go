@@ -66,11 +66,32 @@ func (s *Server) registerCRUD(
 	newObj func() client.Object,
 	newList func() client.ObjectList,
 ) {
-	// Handle /api/{resource}/{name} — GET single, PUT, DELETE
+	// Handle /api/{resource}/{name} and sub-resources — GET single, PUT, DELETE
 	mux.HandleFunc(path+"/", func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, path+"/")
-		if name == "" {
+		rest := strings.TrimPrefix(r.URL.Path, path+"/")
+		rest = strings.TrimSuffix(rest, "/")
+		if rest == "" {
 			http.Error(w, "resource name is required", http.StatusBadRequest)
+			return
+		}
+
+		parts := strings.SplitN(rest, "/", 2)
+		name := parts[0]
+
+		// Check for sub-resources (e.g., /api/agents/eng-agent/logs)
+		if len(parts) == 2 {
+			sub := parts[1]
+			if path == "/api/agents" {
+				switch sub {
+				case "logs":
+					s.handleAgentLogs(w, r, name)
+					return
+				case "chat":
+					s.handleAgentChat(w, r, name)
+					return
+				}
+			}
+			http.Error(w, "unknown sub-resource", http.StatusNotFound)
 			return
 		}
 
