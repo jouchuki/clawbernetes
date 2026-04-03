@@ -144,7 +144,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 
 		It("should use emptyDir for openclaw-home volume", func() {
 			dep := getDeployment(agentName)
-			vol := findVolume(dep, "openclaw-home")
+			vol := findVolume(dep, "harness-home")
 			Expect(vol).NotTo(BeNil())
 			Expect(vol.VolumeSource.EmptyDir).NotTo(BeNil(), "expected emptyDir volume source")
 			Expect(vol.VolumeSource.PersistentVolumeClaim).To(BeNil(), "should NOT have PVC volume source")
@@ -199,7 +199,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 
 		It("should use PVC volume source on the deployment", func() {
 			dep := getDeployment(agentName)
-			vol := findVolume(dep, "openclaw-home")
+			vol := findVolume(dep, "harness-home")
 			Expect(vol).NotTo(BeNil())
 			Expect(vol.VolumeSource.PersistentVolumeClaim).NotTo(BeNil(), "expected PVC volume source")
 			Expect(vol.VolumeSource.PersistentVolumeClaim.ClaimName).To(Equal(agentName + clawv1.PVCSuffix))
@@ -476,7 +476,7 @@ var _ = Describe("ClawAgent Controller — Workspace & Credential Security", fun
 			dep := getDeployment(agentName)
 
 			// PVC volume
-			homeVol := findVolume(dep, "openclaw-home")
+			homeVol := findVolume(dep, "harness-home")
 			Expect(homeVol).NotTo(BeNil())
 			Expect(homeVol.VolumeSource.PersistentVolumeClaim).NotTo(BeNil())
 			Expect(homeVol.VolumeSource.PersistentVolumeClaim.ClaimName).To(Equal(agentName + clawv1.PVCSuffix))

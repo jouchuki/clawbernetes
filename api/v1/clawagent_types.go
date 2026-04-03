@@ -137,7 +137,7 @@ const (
 	PVCResizeSuffix = "-home-v2"
 )
 
-// WorkspaceSpec controls storage for the agent's .openclaw home directory.
+// WorkspaceSpec controls storage for the agent home directory.
 type WorkspaceSpec struct {
 	// mode selects ephemeral (emptyDir) or persistent (PVC) storage.
 	// +optional
@@ -186,8 +186,34 @@ func (w WorkspaceSpec) ResolvedStorageSize() string {
 	return w.StorageSize
 }
 
+// HarnessType is the type of agent harness runtime.
+// +kubebuilder:validation:Enum=openclaw;hermes;ironclaw
+type HarnessType string
+
+const (
+	HarnessOpenClaw HarnessType = "openclaw"
+	HarnessHermes   HarnessType = "hermes"
+	HarnessIronClaw HarnessType = "ironclaw"
+)
+
+// HarnessSpec selects and configures the agent harness runtime.
+type HarnessSpec struct {
+	// type selects the harness runtime. Default: "openclaw".
+	// +optional
+	// +kubebuilder:default=openclaw
+	Type HarnessType `json:"type,omitempty"`
+
+	// image overrides the default container image for this harness.
+	// +optional
+	Image string `json:"image,omitempty"`
+}
+
 // ClawAgentSpec defines the desired state of ClawAgent.
 type ClawAgentSpec struct {
+	// harness selects the agent harness runtime (openclaw, hermes, ironclaw).
+	// +optional
+	Harness HarnessSpec `json:"harness,omitempty"`
+
 	// identity defines the agent's soul, user context, and self-concept.
 	// +optional
 	Identity AgentIdentitySpec `json:"identity,omitempty"`
@@ -230,12 +256,12 @@ type ClawAgentSpec struct {
 	// +optional
 	Lifecycle AgentLifecycleSpec `json:"lifecycle,omitempty"`
 
-	// workspace controls storage for the agent's .openclaw home directory.
+	// workspace controls storage for the agent home directory.
 	// +optional
 	Workspace WorkspaceSpec `json:"workspace,omitempty"`
 
 	// credentialsSecret names a Kubernetes Secret containing integration credentials
-	// (e.g. telegram tokens). Mounted read-only at /home/node/.openclaw/credentials/.
+	// (e.g. telegram tokens). Mounted read-only at the harness credentials directory.
 	// +optional
 	CredentialsSecret string `json:"credentialsSecret,omitempty"`
 
