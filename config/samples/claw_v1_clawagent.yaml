@@ -7,6 +7,8 @@ metadata:
     team: engineering
     tier: senior
 spec:
+  harness:
+    type: openclaw
   identity:
     soul: |
       You are a senior software engineer with deep expertise in distributed

@@ -3,6 +3,8 @@ resources:
 - claw_v1_clawobservability.yaml
 - claw_v1_clawagent.yaml
 - claw_v1_clawagent_sales.yaml
+- claw_v1_clawagent_hermes.yaml
+- claw_v1_clawagent_ironclaw.yaml
 - claw_v1_clawgateway.yaml
 - claw_v1_clawpolicy.yaml
 - claw_v1_clawskillset.yaml

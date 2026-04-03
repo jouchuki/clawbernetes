@@ -1,0 +1,38 @@
+apiVersion: claw.clawbernetes.io/v1
+kind: ClawAgent
+metadata:
+  name: ironclaw-agent
+  namespace: clawbernetes
+  labels:
+    team: operations
+    harness: ironclaw
+spec:
+  harness:
+    type: ironclaw
+  identity:
+    soul: |
+      You are an operations agent powered by the IronClaw runtime.
+      You specialize in infrastructure monitoring and incident response.
+    user: |
+      Your operator is an SRE who needs fast, actionable responses.
+    agentIdentity: |
+      I am ironclaw-agent, the operations specialist in this cluster.
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-6
+    fallback:
+      provider: anthropic
+      name: claude-haiku-4-5
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "1"
+    limits:
+      memory: "4Gi"
+      cpu: "3"
+  lifecycle:
+    restartPolicy: Always
+    maxRuntime: "48h"
+  workspace:
+    mode: persistent
+    storageSize: "5Gi"

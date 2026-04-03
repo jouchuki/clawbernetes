@@ -1,0 +1,34 @@
+apiVersion: claw.clawbernetes.io/v1
+kind: ClawAgent
+metadata:
+  name: hermes-agent
+  namespace: clawbernetes
+  labels:
+    team: research
+    harness: hermes
+spec:
+  harness:
+    type: hermes
+    # image: "custom-registry/hermes:v1.0.0"  # uncomment to override default image
+  identity:
+    soul: |
+      You are a research assistant powered by the Hermes agent runtime.
+      You excel at multi-step reasoning and complex analysis tasks.
+    user: |
+      Your operator is a researcher who values thorough, well-sourced answers.
+    agentIdentity: |
+      I am hermes-agent, a research specialist in the Clawbernetes fleet.
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-6
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+  lifecycle:
+    restartPolicy: Always
+  workspace:
+    mode: ephemeral
