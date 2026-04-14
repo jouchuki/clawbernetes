@@ -162,4 +162,3 @@ func findServicePort(svc *corev1.Service, portName string) int {
 func agentKey(name, namespace string) client.ObjectKey {
 	return client.ObjectKey{Name: name, Namespace: namespace}
 }
-

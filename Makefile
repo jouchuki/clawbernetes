@@ -170,6 +170,20 @@ create-secrets: ## Create K8s secrets from .env file.
 		--namespace=clawbernetes \
 		--dry-run=client -o yaml | $(KUBECTL) apply -f -
 	@echo "=== Secret openclaw-api-keys created/updated ==="
+	@# Telegram bot tokens (read from .env)
+	@$(KUBECTL) create secret generic gojo-telegram-creds \
+		--from-literal=TELEGRAM_BOT_TOKEN=$$(grep GOJO_TELEGRAM_TOKEN .env | cut -d= -f2-) \
+		--namespace=clawbernetes \
+		--dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@$(KUBECTL) create secret generic maki-telegram-creds \
+		--from-literal=TELEGRAM_BOT_TOKEN=$$(grep MAKI_TELEGRAM_TOKEN .env | cut -d= -f2-) \
+		--namespace=clawbernetes \
+		--dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@$(KUBECTL) create secret generic thukuna-telegram-creds \
+		--from-literal=TELEGRAM_BOT_TOKEN=$$(grep THUKUNA_TELEGRAM_TOKEN .env | cut -d= -f2-) \
+		--namespace=clawbernetes \
+		--dry-run=client -o yaml | $(KUBECTL) apply -f -
+	@echo "=== Telegram secrets created/updated ==="
 
 .PHONY: kind-setup
 kind-setup: ## Create a kind cluster and install CRDs.
@@ -181,17 +195,10 @@ kind-setup: ## Create a kind cluster and install CRDs.
 kind-teardown: ## Delete the kind cluster.
 	$(KIND) delete cluster --name $(KIND_CLUSTER_NAME)
 
-.PHONY: demo
-demo: kind-setup ## Full local demo: create kind cluster, install CRDs, print next steps.
-	@echo ""
-	@echo "=== Cluster ready. CRDs installed. ==="
-	@echo "Next: make demo-up"
-	@echo ""
-
 SKIP_IMAGE ?= 0
 
-.PHONY: demo-up
-demo-up: build kind-setup create-secrets ## One command: build everything, load images, apply all CRs, run operator.
+.PHONY: dev
+dev: build kind-setup create-secrets ## Start everything: kind cluster, operator, dashboard.
 ifeq ($(SKIP_IMAGE),0)
 	$(MAKE) build-openclaw-image load-kind
 endif
@@ -205,7 +212,6 @@ endif
 	@$(KUBECTL) delete clawskillsets --all -n clawbernetes --ignore-not-found 2>/dev/null || true
 	@$(KUBECTL) delete clawpolicies --all -n clawbernetes --ignore-not-found 2>/dev/null || true
 	@$(KUBECTL) delete clawgateways --all -n clawbernetes --ignore-not-found 2>/dev/null || true
-	@$(KUBECTL) delete clawconnectors --all -n clawbernetes --ignore-not-found 2>/dev/null || true
 	@sleep 3
 	@# Start operator in background
 	go run ./cmd/main.go > /tmp/clawbernetes-operator.log 2>&1 &
@@ -215,9 +221,12 @@ endif
 	$(KUBECTL) apply -f config/samples/claw_v1_clawobservability.yaml
 	$(KUBECTL) apply -f config/samples/claw_v1_clawskillset.yaml
 	$(KUBECTL) apply -f config/samples/claw_v1_clawpolicy.yaml
-	$(KUBECTL) apply -f config/samples/claw_v1_clawconnector.yaml
-	$(KUBECTL) apply -f config/samples/claw_v1_clawagent.yaml
-	$(KUBECTL) apply -f config/samples/claw_v1_clawagent_sales.yaml
+	$(KUBECTL) apply -f config/samples/claw_v1_clawchannel_gojo.yaml
+	$(KUBECTL) apply -f config/samples/claw_v1_clawchannel_maki.yaml
+	$(KUBECTL) apply -f config/samples/claw_v1_clawchannel_thukuna.yaml
+	$(KUBECTL) apply -f config/samples/claw_v1_clawagent_gojo.yaml
+	$(KUBECTL) apply -f config/samples/claw_v1_clawagent_maki.yaml
+	$(KUBECTL) apply -f config/samples/claw_v1_clawagent_thukuna.yaml
 	@echo ""
 	@echo "=== All resources applied. Waiting for pods... ==="
 	@sleep 10
@@ -226,14 +235,43 @@ endif
 	@$(KUBECTL) get clawobservabilities -n clawbernetes
 	@$(KUBECTL) get clawagents -n clawbernetes
 	@echo ""
+	@# Start dashboard
+	cd ui && npm run dev &
 	@echo ""
-	@echo "Next: make demo-proxy"
+	@echo "=== Dashboard: http://localhost:5173 ==="
 	@echo "Watch pods:    kubectl get pods -n clawbernetes -w"
 	@echo "Operator log:  tail -f /tmp/clawbernetes-operator.log"
-	@echo "Tear down:     make demo-down"
+	@echo "Tear down:     make dev-down"
 
-.PHONY: demo-proxy
-demo-proxy: ## Deploy agent proxy and set up *.local hostnames.
+.PHONY: dev-down
+dev-down: ## Stop operator, dashboard, delete all CRs.
+	@fuser -k 8081/tcp 2>/dev/null || true
+	@fuser -k 8080/tcp 2>/dev/null || true
+	@fuser -k 5173/tcp 2>/dev/null || true
+	@$(KUBECTL) delete clawagents --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawobservabilities --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete clawskillsets --all -n clawbernetes --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete -f config/proxy/nginx-deployment.yaml --ignore-not-found 2>/dev/null || true
+	@$(KUBECTL) delete -f config/proxy/nginx-configmap.yaml --ignore-not-found 2>/dev/null || true
+	@echo "=== Dev stopped. Run 'make kind-teardown' to delete the cluster ==="
+
+.PHONY: pair-list
+pair-list: ## List pending Telegram pairing requests for an agent. Usage: make pair-list AGENT=gojo
+	@test -n "$(AGENT)" || (echo "Usage: make pair-list AGENT=gojo" && exit 1)
+	$(KUBECTL) exec -n clawbernetes deployment/$(AGENT) -- openclaw pairing list telegram
+
+.PHONY: pair-approve
+pair-approve: ## Approve a Telegram pairing code. Usage: make pair-approve AGENT=gojo CODE=ABCD1234
+	@test -n "$(AGENT)" || (echo "Usage: make pair-approve AGENT=gojo CODE=ABCD1234" && exit 1)
+	@test -n "$(CODE)" || (echo "Usage: make pair-approve AGENT=gojo CODE=ABCD1234" && exit 1)
+	$(KUBECTL) exec -n clawbernetes deployment/$(AGENT) -- openclaw pairing approve telegram $(CODE)
+
+.PHONY: dashboard
+dashboard: ## Start only the dashboard dev server.
+	cd ui && npm run dev
+
+.PHONY: dev-proxy
+dev-proxy: ## Deploy agent proxy and set up *.local hostnames.
 	@$(KUBECTL) apply -f config/proxy/nginx-configmap.yaml
 	@$(KUBECTL) apply -f config/proxy/nginx-deployment.yaml
 	@echo "Waiting for proxy pod..."
@@ -259,17 +297,6 @@ demo-proxy: ## Deploy agent proxy and set up *.local hostnames.
 	@echo "    -H 'Authorization: Bearer TOKEN' \\"
 	@echo "    -H 'Content-Type: application/json' \\"
 	@echo "    -d '{\"model\":\"openclaw/default\",\"messages\":[{\"role\":\"user\",\"content\":\"who are you?\"}]}'"
-
-.PHONY: demo-down
-demo-down: ## Stop operator, delete all CRs, optionally tear down cluster.
-	@fuser -k 8081/tcp 2>/dev/null || true
-	@fuser -k 8080/tcp 2>/dev/null || true
-	@$(KUBECTL) delete clawagents --all -n clawbernetes --ignore-not-found 2>/dev/null || true
-	@$(KUBECTL) delete clawobservabilities --all -n clawbernetes --ignore-not-found 2>/dev/null || true
-	@$(KUBECTL) delete clawskillsets --all -n clawbernetes --ignore-not-found 2>/dev/null || true
-	@$(KUBECTL) delete -f config/proxy/nginx-deployment.yaml --ignore-not-found 2>/dev/null || true
-	@$(KUBECTL) delete -f config/proxy/nginx-configmap.yaml --ignore-not-found 2>/dev/null || true
-	@echo "=== Demo stopped. Run 'make kind-teardown' to delete the cluster ==="
 
 ##@ Deployment
 

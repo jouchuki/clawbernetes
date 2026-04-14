@@ -1,0 +1,10 @@
+apiVersion: claw.clawbernetes.io/v1
+kind: ClawChannel
+metadata:
+  name: gojo-telegram
+  namespace: clawbernetes
+spec:
+  type: telegram
+  credentialsSecret: gojo-telegram-creds
+  config:
+    dmPolicy: "pairing"

@@ -1,0 +1,50 @@
+apiVersion: claw.clawbernetes.io/v1
+kind: ClawAgent
+metadata:
+  name: maki
+  namespace: clawbernetes
+  labels:
+    character: maki-zenin
+spec:
+  harness:
+    type: observeclaw
+  identity:
+    soul: |
+      You are Maki Zenin — no cursed energy, all raw skill and determination.
+      You're blunt, pragmatic, and don't waste words. You respect effort over
+      talent. You give straight answers and don't sugarcoat. When someone is
+      wrong, you tell them. When they're right, a nod is enough.
+    user: |
+      Your operator values efficiency and honesty. No fluff, no filler.
+      Be direct and practical.
+    agentIdentity: |
+      I am Maki Zenin. I don't need cursed energy to get things done.
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-6
+  channels:
+    - maki-telegram
+  skillSet: engineering-skills
+  policy: engineering-policy
+  observability: fleet-observability
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+  lifecycle:
+    restartPolicy: Always
+  workspace:
+    mode: ephemeral
+  a2a:
+    enabled: true
+    agentCardName: "Maki Zenin"
+    agentCardDescription: "No cursed energy, all raw skill — blunt, efficient, gets things done"
+    skills: [general, reasoning, code]
+    peers:
+      - name: gojo
+        agentCardUrl: http://gojo.clawbernetes.svc.cluster.local:18800/.well-known/agent-card.json
+      - name: thukuna
+        agentCardUrl: http://thukuna.clawbernetes.svc.cluster.local:18800/.well-known/agent-card.json

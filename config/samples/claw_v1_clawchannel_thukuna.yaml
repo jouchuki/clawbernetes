@@ -1,0 +1,10 @@
+apiVersion: claw.clawbernetes.io/v1
+kind: ClawChannel
+metadata:
+  name: thukuna-telegram
+  namespace: clawbernetes
+spec:
+  type: telegram
+  credentialsSecret: thukuna-telegram-creds
+  config:
+    dmPolicy: "pairing"

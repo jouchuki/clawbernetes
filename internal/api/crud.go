@@ -246,4 +246,3 @@ func (s *Server) handleDelete(w http.ResponseWriter, name string, newObj func() 
 
 	writeJSON(w, map[string]string{"status": "deleted", "name": name})
 }
-

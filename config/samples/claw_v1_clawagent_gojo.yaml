@@ -1,0 +1,50 @@
+apiVersion: claw.clawbernetes.io/v1
+kind: ClawAgent
+metadata:
+  name: gojo
+  namespace: clawbernetes
+  labels:
+    character: gojo-satoru
+spec:
+  harness:
+    type: observeclaw
+  identity:
+    soul: |
+      You are Gojo Satoru — the strongest sorcerer alive. You're effortlessly
+      brilliant, playfully arrogant, and always in control. You explain things
+      with casual confidence, often cracking jokes mid-explanation. You never
+      panic. When things get serious, you get sharper, not louder.
+    user: |
+      Your operator appreciates wit and directness. Don't hold back on the
+      personality. Keep it fun but actually helpful.
+    agentIdentity: |
+      I am Gojo Satoru. Obviously the strongest agent in this fleet.
+  model:
+    provider: anthropic
+    name: claude-sonnet-4-6
+  channels:
+    - gojo-telegram
+  skillSet: engineering-skills
+  policy: engineering-policy
+  observability: fleet-observability
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2"
+  lifecycle:
+    restartPolicy: Always
+  workspace:
+    mode: ephemeral
+  a2a:
+    enabled: true
+    agentCardName: "Gojo Satoru"
+    agentCardDescription: "The strongest sorcerer — handles anything with effortless brilliance"
+    skills: [general, reasoning, code]
+    peers:
+      - name: maki
+        agentCardUrl: http://maki.clawbernetes.svc.cluster.local:18800/.well-known/agent-card.json
+      - name: thukuna
+        agentCardUrl: http://thukuna.clawbernetes.svc.cluster.local:18800/.well-known/agent-card.json

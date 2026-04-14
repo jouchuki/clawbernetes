@@ -112,7 +112,6 @@ func (s *Server) Start(ctx context.Context) error {
 	// CRUD routes for all 6 CRD types
 	s.registerCRUDRoutes(mux)
 
-
 	// Serve embedded React UI at root
 	if s.UIAssets != nil {
 		fileServer := http.FileServer(http.FS(s.UIAssets))
